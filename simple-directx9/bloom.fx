@@ -45,20 +45,25 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
     return float4(0, 0, 0, 1);
 }
 
-// 半径固定（7 → 15tap）
-static const int RADIUS = 51; // 奇数
-static const float SIGMA = 40.0f;
+float4 g_Direction;
 
+// bloom.fx の BlurPS 改造版
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
-    float2 step = float2(g_TexelSize.x, 0);
+    // g_Direction = (1,0) のとき横、(0,1) のとき縦
+    float2 step = g_TexelSize * g_Direction.xy;
+
     float4 sum = 0;
     float weightSum = 0;
+
+    // 半径固定（7 → 15tap）
+    static const int RADIUS = 51; // 奇数
+    static const float SIGMA = 400.0f;
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
     {
-        float w = exp2(-(i * i) / (2.0 * SIGMA * SIGMA) * 1.442695f); // exp(x) = exp2(x * log2(e))
+        float w = exp(-(i * i) / (2.0 * SIGMA * SIGMA));
         sum += tex2D(SrcSampler, texCoord + step * i) * w;
         weightSum += w;
     }

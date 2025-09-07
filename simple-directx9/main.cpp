@@ -33,8 +33,10 @@ LPDIRECT3DSURFACE9 g_pSceneSurf = NULL;
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
 LPDIRECT3DSURFACE9 g_pBrightSurf = NULL;
 
-LPDIRECT3DTEXTURE9 g_pBlurTex = NULL;
-LPDIRECT3DSURFACE9 g_pBlurSurf = NULL;
+LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
+LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
+LPDIRECT3DSURFACE9 g_pBlurSurfH = NULL;
+LPDIRECT3DSURFACE9 g_pBlurSurfV = NULL;
 
 LPDIRECT3DSURFACE9 g_pBackBuffer = NULL;
 
@@ -227,8 +229,13 @@ void InitD3D(HWND hWnd)
 
     hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
                                 D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBlurTex);
-    g_pBlurTex->GetSurfaceLevel(0, &g_pBlurSurf);
+                                D3DPOOL_DEFAULT, &g_pBlurTexH);
+    g_pBlurTexH->GetSurfaceLevel(0, &g_pBlurSurfH);
+
+    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                                D3DPOOL_DEFAULT, &g_pBlurTexV);
+    g_pBlurTexV->GetSurfaceLevel(0, &g_pBlurSurfV);
 
     // バックバッファ保持
     g_pd3dDevice->GetRenderTarget(0, &g_pBackBuffer);
@@ -252,8 +259,10 @@ void Cleanup()
     SAFE_RELEASE(g_pBrightSurf);
     SAFE_RELEASE(g_pBrightTex);
 
-    SAFE_RELEASE(g_pBlurSurf);
-    SAFE_RELEASE(g_pBlurTex);
+    SAFE_RELEASE(g_pBlurSurfH);
+    SAFE_RELEASE(g_pBlurSurfV);
+    SAFE_RELEASE(g_pBlurTexH);
+    SAFE_RELEASE(g_pBlurTexV);
 
     SAFE_RELEASE(g_pBackBuffer);
     SAFE_RELEASE(g_pd3dDevice);
@@ -334,11 +343,18 @@ void Render()
     DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
     g_pd3dDevice->EndScene();
 
-    // (3) ブラー
-    g_pd3dDevice->SetRenderTarget(0, g_pBlurSurf);
-    g_pd3dDevice->BeginScene();
+    // (3a) 横ブラー: BrightTex → BlurTexH
+    g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfH);
+
+    D3DXVECTOR4 direction1(1, 0, 0, 0);
+    g_pBloomEffect->SetVector("g_Direction", &direction1);
     DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
-    g_pd3dDevice->EndScene();
+
+    // (3b) 縦ブラー: BlurTexH → BlurTexV
+    g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfV);
+    D3DXVECTOR4 direction2(0, 1, 0, 0);
+    g_pBloomEffect->SetVector("g_Direction", &direction2);
+    DrawFullScreenQuad(g_pBlurTexH, g_pBloomEffect, "Blur");
 
     // (4) 合成 (最終出力)
     g_pd3dDevice->SetRenderTarget(0, g_pBackBuffer);
@@ -346,7 +362,7 @@ void Render()
     g_pd3dDevice->BeginScene();
 
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTex);
+    g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTexV);
     DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
 
 
