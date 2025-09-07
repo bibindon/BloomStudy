@@ -66,7 +66,7 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 
     static const int RADIUS = 40; // 21tap で十分
     static const float SIGMA = 10.0f; // 分布の広がり
-    static const float STRETCH = 10; // サンプル間隔の倍率
+    static const float STRETCH = 5; // サンプル間隔の倍率
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
@@ -94,7 +94,7 @@ float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
     float4 scene = tex2D(SceneSampler, texCoord);
     float4 bloomH = tex2D(BlurSamplerH, texCoord);
     float4 bloomV = tex2D(BlurSamplerV, texCoord);
-    return scene + (bloomH + bloomV) * 0.7f;
+    return scene + (bloomH + bloomV) * 2.7f;
 }
 
 // === Techniques ===

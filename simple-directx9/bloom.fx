@@ -57,8 +57,8 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     float weightSum = 0;
 
     // 半径固定（7 → 15tap）
-    static const int RADIUS = 51; // 奇数
-    static const float SIGMA = 400.0f;
+    static const int RADIUS = 71; // 奇数
+    static const float SIGMA = 40.0f;
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
@@ -76,7 +76,9 @@ float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float4 scene = tex2D(SceneSampler, texCoord);
     float4 bloom = tex2D(BlurSampler, texCoord);
-    return scene + bloom * 0.7f;
+
+    // ブルームの濃さ
+    return scene + bloom * 5.7f;
 }
 
 // === Techniques ===
