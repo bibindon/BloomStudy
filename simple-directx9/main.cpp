@@ -295,7 +295,7 @@ void Render()
     // (1) シーンをテクスチャに描画
     g_pd3dDevice->SetRenderTarget(0, g_pSceneSurf);
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-                        D3DCOLOR_XRGB(100, 100, 100), 1.0f, 0);
+                        D3DCOLOR_XRGB(10, 10, 10), 1.0f, 0);
     g_pd3dDevice->BeginScene();
 
     D3DXMATRIX mat, View, Proj;
@@ -349,8 +349,8 @@ void Render()
     g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTex);
     DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
 
-    g_pd3dDevice->EndScene();
 
+    g_pd3dDevice->EndScene();
 
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 }

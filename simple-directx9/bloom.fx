@@ -32,7 +32,7 @@ sampler BlurSampler = sampler_state
 };
 
 // === パラメータ ===
-float g_Threshold = 0.1f; // 輝度しきい値
+float g_Threshold = 0.3f; // 輝度しきい値
 float2 g_TexelSize; // (1/width, 1/height) : ブラー用
 
 // === BrightPass ===
@@ -45,23 +45,24 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
     return float4(0, 0, 0, 1);
 }
 
+// 半径固定（7 → 15tap）
+static const int RADIUS = 51; // 奇数
+static const float SIGMA = 40.0f;
+
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
-    float4 sum = float4(0, 0, 0, 0);
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-6, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-5, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-4, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-3, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-2, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(-1, 0));
-    sum += tex2D(SrcSampler, texCoord);
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(1, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(2, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(3, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(4, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(5, 0));
-    sum += tex2D(SrcSampler, texCoord + g_TexelSize * float2(6, 0));
-    return sum / 13.0f;
+    float2 step = float2(g_TexelSize.x, 0);
+    float4 sum = 0;
+    float weightSum = 0;
+
+    [unroll]
+    for (int i = -RADIUS; i <= RADIUS; i++)
+    {
+        float w = exp2(-(i * i) / (2.0 * SIGMA * SIGMA) * 1.442695f); // exp(x) = exp2(x * log2(e))
+        sum += tex2D(SrcSampler, texCoord + step * i) * w;
+        weightSum += w;
+    }
+    return sum / weightSum;
 }
 
 // === Combine ===
@@ -78,7 +79,7 @@ technique BrightPass
 {
     pass P0
     {
-        PixelShader = compile ps_2_0 BrightPassPS();
+        PixelShader = compile ps_3_0 BrightPassPS();
     }
 }
 
@@ -86,7 +87,7 @@ technique Blur
 {
     pass P0
     {
-        PixelShader = compile ps_2_0 BlurPS();
+        PixelShader = compile ps_3_0 BlurPS();
     }
 }
 
@@ -94,7 +95,7 @@ technique Combine
 {
     pass P0
     {
-        PixelShader = compile ps_2_0 CombinePS();
+        PixelShader = compile ps_3_0 CombinePS();
     }
 }
 
