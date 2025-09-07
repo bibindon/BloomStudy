@@ -56,6 +56,7 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
 
 float4 g_Direction;
 
+// 段差をなくすにはもう一度ブラーをする必要がある。
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float2 step = g_TexelSize * g_Direction.xy;
