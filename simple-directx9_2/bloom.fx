@@ -1,7 +1,7 @@
 // bloom.fx
 
-// === “ü—ÍƒeƒNƒXƒ`ƒƒ ===
-// Œ³‚ÌƒV[ƒ“
+// === å…¥åŠ›ãƒ†ã‚¯ã‚¹ãƒãƒ£ ===
+// å…ƒã®ã‚·ãƒ¼ãƒ³
 texture g_SceneTex;
 sampler SceneSampler = sampler_state
 {
@@ -11,7 +11,7 @@ sampler SceneSampler = sampler_state
     MagFilter = LINEAR;
 };
 
-// ˆ—‘ÎÛiBrightPass‚âBlur‚Ì“ü—Í‚Æ‚µ‚Äg‚¤j
+// å‡¦ç†å¯¾è±¡ï¼ˆBrightPassã‚„Blurã®å…¥åŠ›ã¨ã—ã¦ä½¿ã†ï¼‰
 texture g_SrcTex;
 sampler SrcSampler = sampler_state
 {
@@ -21,7 +21,7 @@ sampler SrcSampler = sampler_state
     MagFilter = LINEAR;
 };
 
-// ƒuƒ‰[Ï‚İƒeƒNƒXƒ`ƒƒiCombine‚Åg—pj
+// ãƒ–ãƒ©ãƒ¼æ¸ˆã¿ãƒ†ã‚¯ã‚¹ãƒãƒ£ï¼ˆCombineã§ä½¿ç”¨ï¼‰
 texture g_BlurTexV;
 sampler BlurSamplerH = sampler_state
 {
@@ -40,9 +40,9 @@ sampler BlurSamplerV = sampler_state
     MagFilter = LINEAR;
 };
 
-// === ƒpƒ‰ƒ[ƒ^ ===
-float g_Threshold = 0.3f; // ‹P“x‚µ‚«‚¢’l
-float2 g_TexelSize; // (1/width, 1/height) : ƒuƒ‰[—p
+// === ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ ===
+float g_Threshold = 0.3f; // è¼åº¦ã—ãã„å€¤
+float2 g_TexelSize; // (1/width, 1/height) : ãƒ–ãƒ©ãƒ¼ç”¨
 
 // === BrightPass ===
 float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
@@ -56,7 +56,7 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
 
 float4 g_Direction;
 
-// ’i·‚ğ‚È‚­‚·‚É‚Í‚à‚¤ˆê“xƒuƒ‰[‚ğ‚·‚é•K—v‚ª‚ ‚éB
+// æ®µå·®ã‚’ãªãã™ã«ã¯ã‚‚ã†ä¸€åº¦ãƒ–ãƒ©ãƒ¼ã‚’ã™ã‚‹å¿…è¦ãŒã‚ã‚‹ã€‚
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float2 step = g_TexelSize * g_Direction.xy;
@@ -64,9 +64,9 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     float4 sum = 0;
     float weightSum = 0;
 
-    static const int RADIUS = 40; // 21tap ‚Å\•ª
-    static const float SIGMA = 10.0f; // •ª•z‚ÌL‚ª‚è
-    static const float STRETCH = 5; // ƒTƒ“ƒvƒ‹ŠÔŠu‚Ì”{—¦
+    static const int RADIUS = 40; // 21tap ã§ååˆ†
+    static const float SIGMA = 10.0f; // åˆ†å¸ƒã®åºƒãŒã‚Š
+    static const float STRETCH = 5; // ã‚µãƒ³ãƒ—ãƒ«é–“éš”ã®å€ç‡
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
@@ -78,9 +78,9 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     return sum / weightSum;
 }
 
-// ƒuƒ‹[ƒ€
+// ãƒ–ãƒ«ãƒ¼ãƒ 
 // // === Combine ===
-// // SceneTex + BlurTex ‚ğ‰ÁZ‡¬
+// // SceneTex + BlurTex ã‚’åŠ ç®—åˆæˆ
 // float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
 // {
 //     float4 scene = tex2D(SceneSampler, texCoord);
@@ -88,7 +88,7 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 //     return scene + bloom * 0.7f;
 // }
 
-// ƒAƒiƒ‚ƒ‹ƒtƒBƒbƒN
+// ã‚¢ãƒŠãƒ¢ãƒ«ãƒ•ã‚£ãƒƒã‚¯
 float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float4 scene = tex2D(SceneSampler, texCoord);
