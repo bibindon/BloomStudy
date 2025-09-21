@@ -26,19 +26,11 @@ LPD3DXEFFECT g_pEffect = NULL;        // simple.fx
 LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
 bool g_bClose = false;
 
-// --- Bloom 用リソース ---
+// --- Bloom 用テクスチャ（※サーフェイスは都度ローカル取得） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
-LPDIRECT3DSURFACE9 g_pSceneSurf = NULL;
-
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
-LPDIRECT3DSURFACE9 g_pBrightSurf = NULL;
-
 LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
-LPDIRECT3DSURFACE9 g_pBlurSurfH = NULL;
-LPDIRECT3DSURFACE9 g_pBlurSurfV = NULL;
-
-LPDIRECT3DSURFACE9 g_pBackBuffer = NULL;
 
 struct SCREENVERTEX {
     float x, y, z, rhw;
@@ -52,6 +44,23 @@ static void Cleanup();
 static void Render();
 static void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique);
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// === Helper: テクスチャからRTを一時取得して設定（即Release） ===
+static void SetRTFromTex(LPDIRECT3DTEXTURE9 tex)
+{
+    LPDIRECT3DSURFACE9 rt = NULL;
+    tex->GetSurfaceLevel(0, &rt);                 // AddRef 済みで返る
+    g_pd3dDevice->SetRenderTarget(0, rt);         // Device 側が参照を保持
+    SAFE_RELEASE(rt);                             // 即ReleaseでOK
+}
+
+static void SetRTBackBuffer()
+{
+    LPDIRECT3DSURFACE9 bb = NULL;
+    g_pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb);
+    g_pd3dDevice->SetRenderTarget(0, bb);
+    SAFE_RELEASE(bb);
+}
 
 int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -77,32 +86,24 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
     ATOM atom = RegisterClassEx(&wc);
     assert(atom != 0);
 
-    RECT rect;
-    SetRect(&rect, 0, 0, 640, 480);
+    RECT rect; SetRect(&rect, 0, 0, 640, 480);
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     rect.right = rect.right - rect.left;
     rect.bottom = rect.bottom - rect.top;
-    rect.top = 0;
-    rect.left = 0;
+    rect.top = 0; rect.left = 0;
 
     HWND hWnd = CreateWindow(_T("Window1"),
                              _T("Hello DirectX9 Bloom Sample (3Pass)"),
                              WS_OVERLAPPEDWINDOW,
-                             CW_USEDEFAULT,
-                             CW_USEDEFAULT,
-                             rect.right,
-                             rect.bottom,
-                             NULL,
-                             NULL,
-                             wc.hInstance,
-                             NULL);
+                             CW_USEDEFAULT, CW_USEDEFAULT,
+                             rect.right, rect.bottom,
+                             NULL, NULL, wc.hInstance, NULL);
 
     InitD3D(hWnd);
     ShowWindow(hWnd, SW_SHOWDEFAULT);
     UpdateWindow(hWnd);
 
     MSG msg;
-
     while (true)
     {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
@@ -111,18 +112,12 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
         }
         else
         {
-            Sleep(16);
             Render();
         }
-
-        if (g_bClose)
-        {
-            break;
-        }
+        if (g_bClose) break;
     }
 
     Cleanup();
-
     UnregisterClass(_T("Window1"), wc.hInstance);
     return 0;
 }
@@ -130,11 +125,7 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
 void TextDraw(LPD3DXFONT pFont, TCHAR* text, int X, int Y)
 {
     RECT rect = { X, Y, 0, 0 };
-    HRESULT hResult = pFont->DrawText(NULL,
-                                      text,
-                                      -1,
-                                      &rect,
-                                      DT_LEFT | DT_NOCLIP,
+    HRESULT hResult = pFont->DrawText(NULL, text, -1, &rect, DT_LEFT | DT_NOCLIP,
                                       D3DCOLOR_ARGB(255, 0, 0, 0));
     assert((int)hResult >= 0);
 }
@@ -146,8 +137,7 @@ void InitD3D(HWND hWnd)
     g_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
     assert(g_pD3D != NULL);
 
-    D3DPRESENT_PARAMETERS d3dpp;
-    ZeroMemory(&d3dpp, sizeof(d3dpp));
+    D3DPRESENT_PARAMETERS d3dpp; ZeroMemory(&d3dpp, sizeof(d3dpp));
     d3dpp.Windowed = TRUE;
     d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
     d3dpp.BackBufferFormat = D3DFMT_UNKNOWN;
@@ -156,20 +146,14 @@ void InitD3D(HWND hWnd)
     d3dpp.AutoDepthStencilFormat = D3DFMT_D16;
     d3dpp.hDeviceWindow = hWnd;
 
-    hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
-                                   D3DDEVTYPE_HAL,
-                                   hWnd,
+    hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd,
                                    D3DCREATE_HARDWARE_VERTEXPROCESSING,
-                                   &d3dpp,
-                                   &g_pd3dDevice);
+                                   &d3dpp, &g_pd3dDevice);
     if (FAILED(hResult))
     {
-        hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
-                                       D3DDEVTYPE_HAL,
-                                       hWnd,
+        hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd,
                                        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-                                       &d3dpp,
-                                       &g_pd3dDevice);
+                                       &d3dpp, &g_pd3dDevice);
         assert(hResult == S_OK);
     }
 
@@ -206,89 +190,81 @@ void InitD3D(HWND hWnd)
     }
     pD3DXMtrlBuffer->Release();
 
-    // simple.fx
+    // simple.fx / bloom.fx
     hResult = D3DXCreateEffectFromFile(g_pd3dDevice, _T("simple.fx"), NULL, NULL,
                                        D3DXSHADER_DEBUG, NULL, &g_pEffect, NULL);
     assert(hResult == S_OK);
 
-    // bloom.fx
     hResult = D3DXCreateEffectFromFile(g_pd3dDevice, _T("bloom.fx"), NULL, NULL,
                                        D3DXSHADER_DEBUG, NULL, &g_pBloomEffect, NULL);
     assert(hResult == S_OK);
 
-    // 各テクスチャ作成
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pSceneTex);
-    g_pSceneTex->GetSurfaceLevel(0, &g_pSceneSurf);
+    // 各テクスチャ作成（サーフェイスは保持しない）
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pSceneTex);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBrightTex);
-    g_pBrightTex->GetSurfaceLevel(0, &g_pBrightSurf);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBrightTex);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBlurTexH);
-    g_pBlurTexH->GetSurfaceLevel(0, &g_pBlurSurfH);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBlurTexH);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBlurTexV);
-    g_pBlurTexV->GetSurfaceLevel(0, &g_pBlurSurfV);
-
-    // バックバッファ保持
-    g_pd3dDevice->GetRenderTarget(0, &g_pBackBuffer);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBlurTexV);
 }
 
 void Cleanup()
 {
-    for (auto& texture : g_pTextures)
-    {
-        SAFE_RELEASE(texture);
-    }
+    for (auto& texture : g_pTextures) SAFE_RELEASE(texture);
 
     SAFE_RELEASE(g_pMesh);
     SAFE_RELEASE(g_pEffect);
     SAFE_RELEASE(g_pBloomEffect);
     SAFE_RELEASE(g_pFont);
 
-    SAFE_RELEASE(g_pSceneSurf);
     SAFE_RELEASE(g_pSceneTex);
-
-    SAFE_RELEASE(g_pBrightSurf);
     SAFE_RELEASE(g_pBrightTex);
-
-    SAFE_RELEASE(g_pBlurSurfH);
-    SAFE_RELEASE(g_pBlurSurfV);
     SAFE_RELEASE(g_pBlurTexH);
     SAFE_RELEASE(g_pBlurTexV);
 
-    SAFE_RELEASE(g_pBackBuffer);
     SAFE_RELEASE(g_pd3dDevice);
     SAFE_RELEASE(g_pD3D);
 }
 
 void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique)
 {
-    g_pd3dDevice->SetFVF(D3DFVF_SCREENVERTEX);
+    // 固定機能（FVF）で描くため、前のパスの VS/頂点宣言を解除
+    g_pd3dDevice->SetVertexShader(NULL);
+    g_pd3dDevice->SetVertexDeclaration(NULL);
+
+    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+
     SCREENVERTEX vertices[4] =
     {
-        { -0.5f, -0.5f, 0, 1, 0, 0 },
-        { 639.5f, -0.5f, 0, 1, 1, 0 },
-        { -0.5f, 479.5f, 0, 1, 0, 1 },
-        { 639.5f, 479.5f, 0, 1, 1, 1 },
+        { -0.5f,  -0.5f,   0, 1, 0, 0 },
+        { 639.5f, -0.5f,   0, 1, 1, 0 },
+        { -0.5f,  479.5f,  0, 1, 0, 1 },
+        { 639.5f, 479.5f,  0, 1, 1, 1 },
     };
 
-    effect->SetTechnique(technique);
-    effect->SetTexture("g_SrcTex", tex);
+    g_pd3dDevice->SetFVF(D3DFVF_SCREENVERTEX);
 
-    UINT nPass;
+    effect->SetTechnique(technique);
+    if (tex) effect->SetTexture("g_SrcTex", tex);
+
+    UINT nPass = 0;
     effect->Begin(&nPass, 0);
     effect->BeginPass(0);
+    // （BeginPass後にVSがバインドされるテクでも、上でNULLにしているので固定機能で通る）
     g_pd3dDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(SCREENVERTEX));
     effect->EndPass();
     effect->End();
+
+    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
 }
 
 void Render()
@@ -297,75 +273,74 @@ void Render()
     D3DXVECTOR4 texelSize(1.0f / 640.0f, 1.0f / 480.0f, 0, 0);
     g_pBloomEffect->SetVector("g_TexelSize", &texelSize);
 
-    HRESULT hResult = E_FAIL;
-    static float f = 0.0f;
-    f += 0.025f;
+    static float f = 0.0f; f += 0.025f;
 
-    // (1) シーンをテクスチャに描画
-    g_pd3dDevice->SetRenderTarget(0, g_pSceneSurf);
+    // (1) シーンをテクスチャに描画 : 出力 = g_pSceneTex
+    SetRTFromTex(g_pSceneTex);
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
                         D3DCOLOR_XRGB(10, 10, 10), 1.0f, 0);
     g_pd3dDevice->BeginScene();
-
-    D3DXMATRIX mat, View, Proj;
-    D3DXMatrixPerspectiveFovLH(&Proj, D3DXToRadian(45), 640.0f / 480.0f, 1.0f, 10000.0f);
-    D3DXVECTOR3 vec1(10 * sinf(f), 10, -10 * cosf(f));
-    D3DXVECTOR3 vec2(0, 0, 0);
-    D3DXVECTOR3 vec3(0, 1, 0);
-    D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
-    D3DXMatrixIdentity(&mat);
-    mat = mat * View * Proj;
-    g_pEffect->SetMatrix("g_matWorldViewProj", &mat);
-
-    TCHAR msg[100];
-    _tcscpy_s(msg, 100, _T("ブルーム付きサンプル"));
-    TextDraw(g_pFont, msg, 0, 0);
-
-    g_pEffect->SetTechnique("Technique1");
-    UINT numPass;
-    g_pEffect->Begin(&numPass, 0);
-    g_pEffect->BeginPass(0);
-
-    for (DWORD i = 0; i < g_dwNumMaterials; i++)
     {
-        g_pEffect->SetTexture("texture1", g_pTextures[i]);
-        g_pEffect->CommitChanges();
-        g_pMesh->DrawSubset(i);
-    }
+        D3DXMATRIX mat, View, Proj;
+        D3DXMatrixPerspectiveFovLH(&Proj, D3DXToRadian(45), 640.0f / 480.0f, 1.0f, 10000.0f);
+        D3DXVECTOR3 eye(10 * sinf(f), 10, -10 * cosf(f));
+        D3DXVECTOR3 at(0, 0, 0);
+        D3DXVECTOR3 up(0, 1, 0);
+        D3DXMatrixLookAtLH(&View, &eye, &at, &up);
+        D3DXMatrixIdentity(&mat);
+        mat = mat * View * Proj;
+        g_pEffect->SetMatrix("g_matWorldViewProj", &mat);
 
-    g_pEffect->EndPass();
-    g_pEffect->End();
+        TCHAR msg[100]; _tcscpy_s(msg, 100, _T("ブルーム付きサンプル"));
+        TextDraw(g_pFont, msg, 0, 0);
+
+        g_pEffect->SetTechnique("Technique1");
+        UINT numPass; g_pEffect->Begin(&numPass, 0); g_pEffect->BeginPass(0);
+        for (DWORD i = 0; i < g_dwNumMaterials; i++)
+        {
+            g_pEffect->SetTexture("texture1", g_pTextures[i]);
+            g_pEffect->CommitChanges();
+            g_pMesh->DrawSubset(i);
+        }
+        g_pEffect->EndPass(); g_pEffect->End();
+    }
     g_pd3dDevice->EndScene();
 
-    // (2) 輝度抽出
-    g_pd3dDevice->SetRenderTarget(0, g_pBrightSurf);
+    // (2) 輝度抽出 : 入力 = g_pSceneTex, 出力 = g_pBrightTex
+    SetRTFromTex(g_pBrightTex);
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
     g_pd3dDevice->EndScene();
 
-    // (3a) 横ブラー: BrightTex → BlurTexH
-    g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfH);
+    // (3a) 横ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexH
+    SetRTFromTex(g_pBlurTexH);
+    g_pd3dDevice->BeginScene();
+    {
+        D3DXVECTOR4 direction1(1, 0, 0, 0);
+        g_pBloomEffect->SetVector("g_Direction", &direction1);
+        DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
+    }
+    g_pd3dDevice->EndScene();
 
-    D3DXVECTOR4 direction1(1, 0, 0, 0);
-    g_pBloomEffect->SetVector("g_Direction", &direction1);
-    DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
+    // (3b) 縦ブラー : 入力 = g_pBlurTexH, 出力 = g_pBlurTexV
+    SetRTFromTex(g_pBlurTexV);
+    g_pd3dDevice->BeginScene();
+    {
+        D3DXVECTOR4 direction2(0, 1, 0, 0);
+        g_pBloomEffect->SetVector("g_Direction", &direction2);
+        DrawFullScreenQuad(g_pBlurTexH, g_pBloomEffect, "Blur");
+    }
+    g_pd3dDevice->EndScene();
 
-    // (3b) 縦ブラー: BlurTexH → BlurTexV
-    g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfV);
-    D3DXVECTOR4 direction2(0, 1, 0, 0);
-    g_pBloomEffect->SetVector("g_Direction", &direction2);
-    DrawFullScreenQuad(g_pBlurTexH, g_pBloomEffect, "Blur");
-
-    // (4) 合成 (最終出力)
-    g_pd3dDevice->SetRenderTarget(0, g_pBackBuffer);
+    // (4) 合成 : SceneTex + BlurTexV → BackBuffer
+    SetRTBackBuffer();
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
     g_pd3dDevice->BeginScene();
-
-    g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTexV);
-    DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
-
-
+    {
+        g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
+        g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTexV);
+        DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
+    }
     g_pd3dDevice->EndScene();
 
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
