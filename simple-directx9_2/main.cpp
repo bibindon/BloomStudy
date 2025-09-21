@@ -1,6 +1,4 @@
-﻿// こちらはブルームではなくアナモルフィックを表示
-
-#pragma comment( lib, "d3d9.lib" )
+﻿#pragma comment( lib, "d3d9.lib" )
 #if defined(DEBUG) || defined(_DEBUG)
 #pragma comment( lib, "d3dx9d.lib" )
 #else
@@ -28,19 +26,11 @@ LPD3DXEFFECT g_pEffect = NULL;        // simple.fx
 LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
 bool g_bClose = false;
 
-// --- Bloom 用リソース ---
+// --- Anamorphic 用リソース（★サーフェイスは保持しない） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
-LPDIRECT3DSURFACE9 g_pSceneSurf = NULL;
-
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
-LPDIRECT3DSURFACE9 g_pBrightSurf = NULL;
-
 LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
-LPDIRECT3DSURFACE9 g_pBlurSurfH = NULL;
-LPDIRECT3DSURFACE9 g_pBlurSurfV = NULL;
-
-LPDIRECT3DSURFACE9 g_pBackBuffer = NULL;
 
 struct SCREENVERTEX {
     float x, y, z, rhw;
@@ -54,6 +44,23 @@ static void Cleanup();
 static void Render();
 static void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique);
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// === Helper: テクスチャからRTを一時取得して設定（即Release） ===
+static void SetRTFromTex(LPDIRECT3DTEXTURE9 tex)
+{
+    LPDIRECT3DSURFACE9 pRT = NULL;
+    tex->GetSurfaceLevel(0, &pRT);                // AddRef 済みで返る
+    g_pd3dDevice->SetRenderTarget(0, pRT);        // Device 側が参照を保持
+    SAFE_RELEASE(pRT);                            // ここで即 Release してOK
+}
+
+static void SetRTBackBuffer()
+{
+    LPDIRECT3DSURFACE9 pBB = NULL;
+    g_pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBB);
+    g_pd3dDevice->SetRenderTarget(0, pBB);
+    SAFE_RELEASE(pBB);
+}
 
 int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -208,39 +215,31 @@ void InitD3D(HWND hWnd)
     }
     pD3DXMtrlBuffer->Release();
 
-    // simple.fx
+    // simple.fx / bloom.fx
     hResult = D3DXCreateEffectFromFile(g_pd3dDevice, _T("simple.fx"), NULL, NULL,
                                        D3DXSHADER_DEBUG, NULL, &g_pEffect, NULL);
     assert(hResult == S_OK);
 
-    // bloom.fx
     hResult = D3DXCreateEffectFromFile(g_pd3dDevice, _T("bloom.fx"), NULL, NULL,
                                        D3DXSHADER_DEBUG, NULL, &g_pBloomEffect, NULL);
     assert(hResult == S_OK);
 
-    // 各テクスチャ作成
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pSceneTex);
-    g_pSceneTex->GetSurfaceLevel(0, &g_pSceneSurf);
+    // ★ 各テクスチャ作成（サーフェイスは保持しない）
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pSceneTex);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBrightTex);
-    g_pBrightTex->GetSurfaceLevel(0, &g_pBrightSurf);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBrightTex);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBlurTexH);
-    g_pBlurTexH->GetSurfaceLevel(0, &g_pBlurSurfH);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBlurTexH);
 
-    hResult = D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
-                                D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
-                                D3DPOOL_DEFAULT, &g_pBlurTexV);
-    g_pBlurTexV->GetSurfaceLevel(0, &g_pBlurSurfV);
-
-    // バックバッファ保持
-    g_pd3dDevice->GetRenderTarget(0, &g_pBackBuffer);
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBlurTexV);
 }
 
 void Cleanup()
@@ -255,24 +254,22 @@ void Cleanup()
     SAFE_RELEASE(g_pBloomEffect);
     SAFE_RELEASE(g_pFont);
 
-    SAFE_RELEASE(g_pSceneSurf);
+    // ★ サーフェイスは保持していないので解放不要
     SAFE_RELEASE(g_pSceneTex);
-
-    SAFE_RELEASE(g_pBrightSurf);
     SAFE_RELEASE(g_pBrightTex);
-
-    SAFE_RELEASE(g_pBlurSurfH);
-    SAFE_RELEASE(g_pBlurSurfV);
     SAFE_RELEASE(g_pBlurTexH);
     SAFE_RELEASE(g_pBlurTexV);
 
-    SAFE_RELEASE(g_pBackBuffer);
     SAFE_RELEASE(g_pd3dDevice);
     SAFE_RELEASE(g_pD3D);
 }
 
 void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique)
 {
+    // ※固定機能(FVF)で描く。必要なら VS/頂点宣言を解除してから FVF をセット
+    g_pd3dDevice->SetVertexShader(NULL);
+    g_pd3dDevice->SetVertexDeclaration(NULL);
+
     g_pd3dDevice->SetFVF(D3DFVF_SCREENVERTEX);
     SCREENVERTEX vertices[4] =
     {
@@ -303,8 +300,8 @@ void Render()
     static float f = 0.0f;
     f += 0.025f;
 
-    // (1) シーンをテクスチャに描画
-    g_pd3dDevice->SetRenderTarget(0, g_pSceneSurf);
+    // (1) シーンをテクスチャに描画 : 出力 = g_pSceneTex
+    SetRTFromTex(g_pSceneTex);
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
                         D3DCOLOR_XRGB(10, 10, 10), 1.0f, 0);
     g_pd3dDevice->BeginScene();
@@ -339,71 +336,42 @@ void Render()
     g_pEffect->End();
     g_pd3dDevice->EndScene();
 
-    // ブルーム
-    if (false)
+    // --- 以下、ポスト処理（アナモルフィック） ---
+
+    // (2) 輝度抽出 : 入力 = g_pSceneTex, 出力 = g_pBrightTex
+    SetRTFromTex(g_pBrightTex);
+    g_pd3dDevice->BeginScene();
+    DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
+    g_pd3dDevice->EndScene();
+
+    // (3a) 横ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexH
+    SetRTFromTex(g_pBlurTexH);
+    g_pd3dDevice->BeginScene();
     {
-        // (2) 輝度抽出
-        g_pd3dDevice->SetRenderTarget(0, g_pBrightSurf);
-        g_pd3dDevice->BeginScene();
-        DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
-        g_pd3dDevice->EndScene();
-
-        // (3a) 横ブラー: BrightTex → BlurTexH
-        g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfH);
-
         D3DXVECTOR4 direction1(1, 0, 0, 0);
         g_pBloomEffect->SetVector("g_Direction", &direction1);
         DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
-
-        // (3b) 縦ブラー: BlurTexH → BlurTexV
-        g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfV);
-        D3DXVECTOR4 direction2(0, 1, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction2);
-        DrawFullScreenQuad(g_pBlurTexH, g_pBloomEffect, "Blur");
-
-        // (4) 合成 (最終出力)
-        g_pd3dDevice->SetRenderTarget(0, g_pBackBuffer);
-        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-        g_pd3dDevice->BeginScene();
-
-        g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-        g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTexV);
-        DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
     }
-    // アナモルフィック
-    else
+    g_pd3dDevice->EndScene();
+
+    // (3b) 縦ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexV
+    SetRTFromTex(g_pBlurTexV);
+    g_pd3dDevice->BeginScene();
     {
-        // (2) 輝度抽出
-        g_pd3dDevice->SetRenderTarget(0, g_pBrightSurf);
-        g_pd3dDevice->BeginScene();
-        DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
-        g_pd3dDevice->EndScene();
-
-        // (3a) 横ブラー: BrightTex → BlurTexH
-        g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfH);
-        D3DXVECTOR4 direction1(1, 0, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction1);
-        DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
-
-        // (3b) 縦ブラー: BrightTex → BlurTexV
-        g_pd3dDevice->SetRenderTarget(0, g_pBlurSurfV);
         D3DXVECTOR4 direction2(0, 1, 0, 0);
         g_pBloomEffect->SetVector("g_Direction", &direction2);
         DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
-
-        // (4) 合成 (最終出力)
-        g_pd3dDevice->SetRenderTarget(0, g_pBackBuffer);
-        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET,
-                            D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-        g_pd3dDevice->BeginScene();
-
-        g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-        g_pBloomEffect->SetTexture("g_BlurTexH", g_pBlurTexH);
-        g_pBloomEffect->SetTexture("g_BlurTexV", g_pBlurTexV);
-        DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
     }
+    g_pd3dDevice->EndScene();
 
-
+    // (4) 合成 : SceneTex + (BlurTexH + BlurTexV) → 画面
+    SetRTBackBuffer();
+    g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+    g_pd3dDevice->BeginScene();
+    g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
+    g_pBloomEffect->SetTexture("g_BlurTexH", g_pBlurTexH);
+    g_pBloomEffect->SetTexture("g_BlurTexV", g_pBlurTexV);
+    DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
     g_pd3dDevice->EndScene();
 
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
