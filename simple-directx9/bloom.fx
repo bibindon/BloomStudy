@@ -1,7 +1,7 @@
 // bloom.fx
 
-// === “ü—ÍƒeƒNƒXƒ`ƒƒ ===
-// Œ³‚ÌƒV[ƒ“
+// === å…¥åŠ›ãƒ†ã‚¯ã‚¹ãƒãƒ£ ===
+// å…ƒã®ã‚·ãƒ¼ãƒ³
 texture g_SceneTex;
 sampler SceneSampler = sampler_state
 {
@@ -11,7 +11,7 @@ sampler SceneSampler = sampler_state
     MagFilter = LINEAR;
 };
 
-// ˆ—‘ÎÛiBrightPass‚âBlur‚Ì“ü—Í‚Æ‚µ‚Äg‚¤j
+// å‡¦ç†å¯¾è±¡ï¼ˆBrightPassã‚„Blurã®å…¥åŠ›ã¨ã—ã¦ä½¿ã†ï¼‰
 texture g_SrcTex;
 sampler SrcSampler = sampler_state
 {
@@ -21,7 +21,7 @@ sampler SrcSampler = sampler_state
     MagFilter = LINEAR;
 };
 
-// ƒuƒ‰[Ï‚İƒeƒNƒXƒ`ƒƒiCombine‚Åg—pj
+// ãƒ–ãƒ©ãƒ¼æ¸ˆã¿ãƒ†ã‚¯ã‚¹ãƒãƒ£ï¼ˆCombineã§ä½¿ç”¨ï¼‰
 texture g_BlurTex;
 sampler BlurSampler = sampler_state
 {
@@ -31,9 +31,9 @@ sampler BlurSampler = sampler_state
     MagFilter = LINEAR;
 };
 
-// === ƒpƒ‰ƒ[ƒ^ ===
-float g_Threshold = 0.3f; // ‹P“x‚µ‚«‚¢’l
-float2 g_TexelSize; // (1/width, 1/height) : ƒuƒ‰[—p
+// === ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ ===
+float g_Threshold = 0.3f; // è¼åº¦ã—ãã„å€¤
+float2 g_TexelSize; // (1/width, 1/height) : ãƒ–ãƒ©ãƒ¼ç”¨
 
 // === BrightPass ===
 float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
@@ -47,17 +47,17 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
 
 float4 g_Direction;
 
-// bloom.fx ‚Ì BlurPS ‰ü‘¢”Å
+// bloom.fx ã® BlurPS æ”¹é€ ç‰ˆ
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
-    // g_Direction = (1,0) ‚Ì‚Æ‚«‰¡A(0,1) ‚Ì‚Æ‚«c
+    // g_Direction = (1,0) ã®ã¨ãæ¨ªã€(0,1) ã®ã¨ãç¸¦
     float2 step = g_TexelSize * g_Direction.xy;
 
     float4 sum = 0;
     float weightSum = 0;
 
-    // ”¼ŒaŒÅ’èi7 ¨ 15tapj
-    static const int RADIUS = 71; // Šï”
+    // åŠå¾„å›ºå®šï¼ˆ7 â†’ 15tapï¼‰
+    static const int RADIUS = 71; // å¥‡æ•°
     static const float SIGMA = 40.0f;
 
     [unroll]
@@ -71,13 +71,13 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 }
 
 // === Combine ===
-// SceneTex + BlurTex ‚ğ‰ÁZ‡¬
+// SceneTex + BlurTex ã‚’åŠ ç®—åˆæˆ
 float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float4 scene = tex2D(SceneSampler, texCoord);
     float4 bloom = tex2D(BlurSampler, texCoord);
 
-    // ƒuƒ‹[ƒ€‚Ì”Z‚³
+    // ãƒ–ãƒ«ãƒ¼ãƒ ã®æ¿ƒã•
     return scene + bloom * 5.7f;
 }
 
