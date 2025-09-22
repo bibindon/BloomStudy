@@ -1,7 +1,11 @@
-// bloom.fx
+// bloom.fx  (UTF-8 / BOMなし)
+// 6方向スターバースト。長い光条向けチューニング版。
+// - サンプラーは CLAMP（端の回り込み防止）
+// - 方向性ブラーの重みを「指数減衰」に変更して遠距離の寄与を残す
+// - STRETCH を拡大してサンプル間隔を広げ、見た目の伸びを強化
 
-// === 入力テクスチャ ===
-// 元のシーン
+// ========= テクスチャ & サンプラー =========
+
 texture g_SceneTex;
 sampler SceneSampler = sampler_state
 {
@@ -9,9 +13,10 @@ sampler SceneSampler = sampler_state
     MipFilter = LINEAR;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
 };
 
-// 処理対象（BrightPassやBlurの入力として使う）
 texture g_SrcTex;
 sampler SrcSampler = sampler_state
 {
@@ -19,85 +24,98 @@ sampler SrcSampler = sampler_state
     MipFilter = LINEAR;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
 };
 
-// ブラー済みテクスチャ（Combineで使用）
-texture g_BlurTexV;
+texture g_BlurTexH; // 0°
 sampler BlurSamplerH = sampler_state
-{
-    Texture = <g_BlurTexV>;
-    MipFilter = LINEAR;
-    MinFilter = LINEAR;
-    MagFilter = LINEAR;
-};
-
-texture g_BlurTexH;
-sampler BlurSamplerV = sampler_state
 {
     Texture = <g_BlurTexH>;
     MipFilter = LINEAR;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
 };
 
-// === パラメータ ===
-float g_Threshold = 0.3f; // 輝度しきい値
-float2 g_TexelSize; // (1/width, 1/height) : ブラー用
-
-// === BrightPass ===
-float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
+texture g_BlurTexV; // 60°
+sampler BlurSamplerV = sampler_state
 {
-    float4 c = tex2D(SrcSampler, texCoord);
+    Texture = <g_BlurTexV>;
+    MipFilter = LINEAR;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+texture g_BlurTex60; // 120°
+sampler BlurSampler60 = sampler_state
+{
+    Texture = <g_BlurTex60>;
+    MipFilter = LINEAR;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+// ========= パラメータ =========
+
+float g_Threshold = 0.6f; // 明部抽出のしきい値（高め＝コアだけ伸びる）
+float2 g_TexelSize; // (1/width, 1/height)
+float4 g_Direction; // (cosθ, sinθ, 0, 0)
+
+// 長さのチューニング用（必要ならここを調整）
+static const int RADIUS = 40; // ±40 → 81tap（3軸で243tap）
+static const float STRETCH = 2.0f; // サンプル間隔（大きいほど長く）
+static const float LAMBDA = 50.0f; // 指数減衰のスケール（大きいほど尾が残る）
+
+// ========= シェーダ =========
+
+// 明部抽出
+float4 BrightPassPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float4 c = tex2D(SrcSampler, uv);
     float lum = dot(c.rgb, float3(0.299, 0.587, 0.114));
-    if (lum > g_Threshold)
-        return c;
-    return float4(0, 0, 0, 1);
+    return (lum > g_Threshold) ? c : float4(0, 0, 0, 1);
 }
 
-float4 g_Direction;
-
-// 段差をなくすにはもう一度ブラーをする必要がある。
-float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
+// 方向性 1D ブラー（指数減衰プロファイル）
+// ガウシアンより遠距離の寄与が残るため、長い“筋”が出やすい。
+float4 BlurPS(float2 uv : TEXCOORD0) : COLOR
 {
-    float2 step = g_TexelSize * g_Direction.xy;
+    float2 step = g_TexelSize * g_Direction.xy; // 1px相当のUVステップ
 
     float4 sum = 0;
     float weightSum = 0;
 
-    static const int RADIUS = 40; // 21tap で十分
-    static const float SIGMA = 10.0f; // 分布の広がり
-    static const float STRETCH = 5; // サンプル間隔の倍率
-
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
     {
-        float w = exp(-(i * i) / (2.0 * SIGMA * SIGMA));
-        sum += tex2D(SrcSampler, texCoord + step * (i * STRETCH)) * w;
+        float t = i * STRETCH; // t ピクセル分
+        float w = exp(-abs(t) / LAMBDA); // 指数減衰（尾が長い）
+        sum += tex2D(SrcSampler, uv + step * t) * w;
         weightSum += w;
     }
-    return sum / weightSum;
+    return sum / max(weightSum, 1e-6);
 }
 
-// ブルーム
-// // === Combine ===
-// // SceneTex + BlurTex を加算合成
-// float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
-// {
-//     float4 scene = tex2D(SceneSampler, texCoord);
-//     float4 bloom = tex2D(BlurSampler, texCoord);
-//     return scene + bloom * 0.7f;
-// }
-
-// アナモルフィック
-float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
+// 合成：Scene + 3軸ブラー（=6方向）
+float4 CombinePS(float2 uv : TEXCOORD0) : COLOR
 {
-    float4 scene = tex2D(SceneSampler, texCoord);
-    float4 bloomH = tex2D(BlurSamplerH, texCoord);
-    float4 bloomV = tex2D(BlurSamplerV, texCoord);
-    return scene + (bloomH + bloomV) * 2.7f;
+    float4 scene = tex2D(SceneSampler, uv);
+    float4 b0 = tex2D(BlurSamplerH, uv); // 0°
+    float4 b1 = tex2D(BlurSamplerV, uv); // 60°
+    float4 b2 = tex2D(BlurSampler60, uv); // 120°
+
+    const float gain = 2.2f; // 強すぎる場合は下げる(1.2〜2.0目安)
+    return scene + (b0 + b1 + b2) * gain;
 }
 
-// === Techniques ===
+// ========= テクニック =========
+
 technique BrightPass
 {
     pass P0
@@ -121,4 +139,3 @@ technique Combine
         PixelShader = compile ps_3_0 CombinePS();
     }
 }
-

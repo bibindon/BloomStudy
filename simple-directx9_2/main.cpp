@@ -31,6 +31,7 @@ LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
+LPDIRECT3DTEXTURE9 g_pBlurTexD = NULL; // 120°（★追加）
 
 struct SCREENVERTEX {
     float x, y, z, rhw;
@@ -147,7 +148,6 @@ void TextDraw(LPD3DXFONT pFont, TCHAR* text, int X, int Y)
                                       D3DCOLOR_ARGB(255, 0, 0, 0));
     assert((int)hResult >= 0);
 }
-
 void InitD3D(HWND hWnd)
 {
     HRESULT hResult = E_FAIL;
@@ -233,13 +233,20 @@ void InitD3D(HWND hWnd)
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBrightTex);
 
+    // 0°（水平）
     D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexH);
 
+    // 60°
     D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
+
+    // 120°（★追加）
+    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+                      D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                      D3DPOOL_DEFAULT, &g_pBlurTexD);
 }
 
 void Cleanup()
@@ -259,6 +266,7 @@ void Cleanup()
     SAFE_RELEASE(g_pBrightTex);
     SAFE_RELEASE(g_pBlurTexH);
     SAFE_RELEASE(g_pBlurTexV);
+    SAFE_RELEASE(g_pBlurTexD);
 
     SAFE_RELEASE(g_pd3dDevice);
     SAFE_RELEASE(g_pD3D);
@@ -289,7 +297,6 @@ void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char*
     effect->EndPass();
     effect->End();
 }
-
 void Render()
 {
     // ブラー用のテクセルサイズを設定 (解像度依存)
@@ -317,7 +324,7 @@ void Render()
     g_pEffect->SetMatrix("g_matWorldViewProj", &mat);
 
     TCHAR msg[100];
-    _tcscpy_s(msg, 100, _T("ブルーム付きサンプル"));
+    _tcscpy_s(msg, 100, _T("スターバースト（6方向）サンプル"));
     TextDraw(g_pFont, msg, 0, 0);
 
     g_pEffect->SetTechnique("Technique1");
@@ -336,7 +343,7 @@ void Render()
     g_pEffect->End();
     g_pd3dDevice->EndScene();
 
-    // --- 以下、ポスト処理（アナモルフィック） ---
+    // --- 以下、ポスト処理（スターバースト 0°/60°/120°） ---
 
     // (2) 輝度抽出 : 入力 = g_pSceneTex, 出力 = g_pBrightTex
     SetRTFromTex(g_pBrightTex);
@@ -344,33 +351,48 @@ void Render()
     DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
     g_pd3dDevice->EndScene();
 
-    // (3a) 横ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexH
+    // (3a) 0° ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexH
     SetRTFromTex(g_pBlurTexH);
     g_pd3dDevice->BeginScene();
     {
-        D3DXVECTOR4 direction1(1, 0, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction1);
+        D3DXVECTOR4 direction0(1.0f, 0.0f, 0, 0); // 0°
+        g_pBloomEffect->SetVector("g_Direction", &direction0);
         DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
     }
     g_pd3dDevice->EndScene();
 
-    // (3b) 縦ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexV
+    // (3b) 60° ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexV
     SetRTFromTex(g_pBlurTexV);
     g_pd3dDevice->BeginScene();
     {
-        D3DXVECTOR4 direction2(0, 1, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction2);
+        // cos60 = 0.5, sin60 = 0.8660254
+        D3DXVECTOR4 direction60(0.5f, 0.8660254f, 0, 0); // 60°
+        g_pBloomEffect->SetVector("g_Direction", &direction60);
         DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
     }
     g_pd3dDevice->EndScene();
 
-    // (4) 合成 : SceneTex + (BlurTexH + BlurTexV) → 画面
+    // (3c) 120° ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexD
+    SetRTFromTex(g_pBlurTexD);
+    g_pd3dDevice->BeginScene();
+    {
+        // cos120 = -0.5, sin120 = 0.8660254
+        D3DXVECTOR4 direction120(-0.5f, 0.8660254f, 0, 0); // 120°
+        g_pBloomEffect->SetVector("g_Direction", &direction120);
+        DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
+    }
+    g_pd3dDevice->EndScene();
+
+    // (4) 合成 : SceneTex + (0° + 60° + 120°) → 画面
     SetRTBackBuffer();
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
     g_pd3dDevice->BeginScene();
+
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_BlurTexH", g_pBlurTexH);
-    g_pBloomEffect->SetTexture("g_BlurTexV", g_pBlurTexV);
+    g_pBloomEffect->SetTexture("g_BlurTexH", g_pBlurTexH); // 0°
+    g_pBloomEffect->SetTexture("g_BlurTexV", g_pBlurTexV); // 60°
+    g_pBloomEffect->SetTexture("g_BlurTex60", g_pBlurTexD); // 120°
+
     DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
     g_pd3dDevice->EndScene();
 
