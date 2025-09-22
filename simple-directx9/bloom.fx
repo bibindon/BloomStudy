@@ -57,14 +57,16 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     float weightSum = 0;
 
     // 半径固定（7 → 15tap）
-    static const int RADIUS = 71; // 奇数
-    static const float SIGMA = 40.0f;
+    static const int RADIUS = 40;
+    static const float SIGMA = 60.0f;
+    static const float STRETCH = 4.0f; // サンプル間隔（大きいほど長く）
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
     {
-        float w = exp(-(i * i) / (2.0 * SIGMA * SIGMA));
-        sum += tex2D(SrcSampler, texCoord + step * i) * w;
+        float t = i * STRETCH; // t ピクセル分
+        float w = exp(-(t * t) / (2.0 * SIGMA * SIGMA));
+        sum += tex2D(SrcSampler, texCoord + step * t) * w;
         weightSum += w;
     }
     return sum / weightSum;
