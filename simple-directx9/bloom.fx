@@ -80,7 +80,7 @@ float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
     float4 bloom = tex2D(BlurSampler, texCoord);
 
     // ブルームの濃さ
-    return scene + bloom * 5.7f;
+    return scene + bloom * 2.0f;
 }
 
 // === Techniques ===
