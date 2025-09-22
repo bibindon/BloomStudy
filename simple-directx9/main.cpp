@@ -273,7 +273,7 @@ void Render()
     D3DXVECTOR4 texelSize(1.0f / 640.0f, 1.0f / 480.0f, 0, 0);
     g_pBloomEffect->SetVector("g_TexelSize", &texelSize);
 
-    static float f = 0.0f; f += 0.025f;
+    static float f = 0.0f; f += 0.01f;
 
     // (1) シーンをテクスチャに描画 : 出力 = g_pSceneTex
     SetRTFromTex(g_pSceneTex);
