@@ -297,6 +297,7 @@ void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char*
     effect->EndPass();
     effect->End();
 }
+
 void Render()
 {
     // ブラー用のテクセルサイズを設定 (解像度依存)
