@@ -5,9 +5,33 @@ texture g_SceneTex;   // 最終合成用（元シーン）
 texture g_SrcTex;     // 現在の処理の入力
 texture g_SrcTex2;    // Up 合成で使う“ひとつ上の解像度”のバッファ
 
-sampler SceneS = sampler_state { Texture = <g_SceneTex>; MinFilter=LINEAR; MagFilter=LINEAR; MipFilter=LINEAR; AddressU=CLAMP; AddressV=CLAMP; };
-sampler SrcS   = sampler_state { Texture = <g_SrcTex>;   MinFilter=LINEAR; MagFilter=LINEAR; MipFilter=LINEAR; AddressU=CLAMP; AddressV=CLAMP; };
-sampler SrcS2  = sampler_state { Texture = <g_SrcTex2>;  MinFilter=LINEAR; MagFilter=LINEAR; MipFilter=LINEAR; AddressU=CLAMP; AddressV=CLAMP; };
+sampler SceneS = sampler_state
+{
+    Texture = <g_SceneTex>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+sampler SrcS = sampler_state
+{
+    Texture = <g_SrcTex>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+sampler SrcS2 = sampler_state
+{
+    Texture = <g_SrcTex2>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
 
 // === パラメータ ===
 float2 g_TexelSize;   // ★「ソース側」の 1/幅,1/高 をセットすること（パスごとに更新）
@@ -21,7 +45,7 @@ float4 PS_Bright(float2 uv:TEXCOORD0) : COLOR
     float3 c = tex2D(SrcS, uv).rgb;
     float  l = dot(c, LumaCoeffs);
     float  m = max(0, l - g_Threshold);     // ソフトニーを入れたければ smoothstep へ変更可
-    float  k = m / max(l, 1e-4);
+    float  k = m / max(l, 0.0001);
     return float4(c * saturate(k), 1);
 }
 
@@ -30,33 +54,57 @@ float4 PS_Down(float2 uv:TEXCOORD0) : COLOR
 {
     // 入力（SrcS）のテクセルサイズ
     float2 s = g_TexelSize;
-//    s *= 2;
 
     // テント（中心=4, クロス=2, 隅=1）/16
     float4 c0 = tex2D(SrcS, uv);
-    float4 cx = tex2D(SrcS, uv + float2(+s.x, 0)) + tex2D(SrcS, uv + float2(-s.x, 0))
-              + tex2D(SrcS, uv + float2(0, +s.y)) + tex2D(SrcS, uv + float2(0, -s.y));
-    float4 cc = tex2D(SrcS, uv + s) + tex2D(SrcS, uv + float2(+s.x, -s.y))
-              + tex2D(SrcS, uv + float2(-s.x, +s.y)) + tex2D(SrcS, uv - s);
 
-    return (c0*4.0 + cx*2.0 + cc) / 16.0;
+    float4 cx = tex2D(SrcS, uv + float2(+s.x,    0)) +
+                tex2D(SrcS, uv + float2(-s.x,    0)) +
+                tex2D(SrcS, uv + float2(   0, +s.y)) +
+                tex2D(SrcS, uv + float2(   0, -s.y));
+
+    float4 cc = tex2D(SrcS, uv + s) +
+                tex2D(SrcS, uv + float2(+s.x, -s.y)) +
+                tex2D(SrcS, uv + float2(-s.x, +s.y)) +
+                tex2D(SrcS, uv - s);
+
+     return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
+    //return (c0 + cx + cc) / 9.0;
 }
+
+float g_LevelGain = 1.0;   // ← このパス（このレベル）専用の重み
 
 // ------------- Upsample（拡大＋Add 合成）-------------
 float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
 {
     // 低解像度のブルーム（SrcS）をテントで少し広げて拡大
     float2 s = g_TexelSize;
-//    s *= 2;
-    float4 low  = ( tex2D(SrcS, uv) * 4.0
-                  + tex2D(SrcS, uv + float2(+s.x, 0)) + tex2D(SrcS, uv + float2(-s.x, 0))
-                  + tex2D(SrcS, uv + float2(0, +s.y)) + tex2D(SrcS, uv + float2(0, -s.y))
-                  + tex2D(SrcS, uv + s) + tex2D(SrcS, uv + float2(+s.x, -s.y))
-                  + tex2D(SrcS, uv + float2(-s.x, +s.y)) + tex2D(SrcS, uv - s) ) / 12.0;
+
+    float4 low  = ( tex2D(SrcS, uv) * 4.0 +
+                    tex2D(SrcS, uv + float2(+s.x, 0)) +
+                    tex2D(SrcS, uv + float2(-s.x, 0)) +
+                    tex2D(SrcS, uv + float2(0, +s.y)) +
+                    tex2D(SrcS, uv + float2(0, -s.y)) +
+                    tex2D(SrcS, uv + s) +
+                    tex2D(SrcS, uv + float2(+s.x, -s.y)) +
+                    tex2D(SrcS, uv + float2(-s.x, +s.y)) +
+                    tex2D(SrcS, uv - s) ) / 12.0;
+
+    float4 low2  = (tex2D(SrcS, uv) +
+                    tex2D(SrcS, uv + float2(+s.x, 0)) +
+                    tex2D(SrcS, uv + float2(-s.x, 0)) +
+                    tex2D(SrcS, uv + float2(0, +s.y)) +
+                    tex2D(SrcS, uv + float2(0, -s.y)) +
+                    tex2D(SrcS, uv + s) +
+                    tex2D(SrcS, uv + float2(+s.x, -s.y)) +
+                    tex2D(SrcS, uv + float2(-s.x, +s.y)) +
+                    tex2D(SrcS, uv - s) ) / 9.0;
 
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
-    return low + hi;
+    return low * g_LevelGain + hi;
+    //return low2 * g_LevelGain + hi;
+    //return low2 + hi;
 }
 
 // -------------------- 最終合成 --------------------

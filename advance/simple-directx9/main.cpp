@@ -35,9 +35,12 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 // ★ 追加：ピラミッド（3段）
-static const int kLevels = 12; // 1/2, 1/4, 1/8
+static const int kLevels = 8; // 1/2, 1/4, 1/8
 LPDIRECT3DTEXTURE9 g_pDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_pUp[kLevels]   = {0};
+
+float g_fThreshold = 0.8f;
+float g_fIntensity = 1.0f;
 
 struct SCREENVERTEX {
     float x, y, z, rhw;
@@ -377,7 +380,7 @@ static void Render()
     // クリア（黒 + Z）
     g_pd3dDevice->Clear(0, NULL,
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-        D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+        D3DCOLOR_XRGB(100, 100, 100), 1.0f, 0);
 
     // 行列セット
     D3DXMATRIX W, V, P, WVP;
@@ -417,7 +420,7 @@ static void Render()
     g_pBloomEffect->SetTechnique("BrightPass");
     g_pBloomEffect->SetTexture("g_SrcTex", g_pSceneTex);
     SetTexelSizeFromTexture(g_pSceneTex);           // ソースのテクセルサイズ（重要）
-    g_pBloomEffect->SetFloat("g_Threshold", 0.3f);  // LDRなら 0.7〜1.0 推奨
+    g_pBloomEffect->SetFloat("g_Threshold", g_fThreshold);  // LDRなら 0.7〜1.0 推奨
 
     LPDIRECT3DSURFACE9 surf = NULL;
     g_pBrightTex->GetSurfaceLevel(0, &surf);
@@ -488,7 +491,7 @@ static void Render()
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
     g_pBloomEffect->SetTexture("g_SrcTex",   g_pUp[0]);
-    g_pBloomEffect->SetFloat("g_Intensity",  0.6f);
+    g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
 
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);
