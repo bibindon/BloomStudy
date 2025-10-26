@@ -365,74 +365,64 @@ static void DrawFullScreenQuadCurrentRT(LPD3DXEFFECT fx)
     fx->End();
 }
 
-static void Render()
+void Render()
 {
-    //==============================================================
-    // 0) シーンを g_pSceneTex に描く（simple.fx）
-    //==============================================================
-    LPDIRECT3DSURFACE9 oldRT = NULL;
-    g_pd3dDevice->GetRenderTarget(0, &oldRT);
+    //========================
+    // 0) シーンを g_pSceneTex に描く
+    //========================
+    LPDIRECT3DSURFACE9 oldRT0 = NULL;
+    g_pd3dDevice->GetRenderTarget(0, &oldRT0);
 
-    LPDIRECT3DSURFACE9 sceneRT = NULL;
-    g_pSceneTex->GetSurfaceLevel(0, &sceneRT);
-    g_pd3dDevice->SetRenderTarget(0, sceneRT);
+    LPDIRECT3DSURFACE9 rt = NULL;
+    g_pSceneTex->GetSurfaceLevel(0, &rt);
+    g_pd3dDevice->SetRenderTarget(0, rt);
+    g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+                        D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
-    // クリア（黒 + Z）
-    g_pd3dDevice->Clear(0, NULL,
-        D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-        D3DCOLOR_XRGB(100, 100, 100), 1.0f, 0);
-
-    // 行列セット
-    D3DXMATRIX W, V, P, WVP;
-    D3DXMatrixRotationY(&W, timeGetTime() * 0.001f);
-    D3DXVECTOR3 eye(0, 2.2f, -5.0f), at(0, 0.8f, 0), up(0, 1, 0);
-    D3DXMatrixLookAtLH(&V, &eye, &at, &up);
-    D3DXMatrixPerspectiveFovLH(&P, D3DXToRadian(60.f), 1600.0f/900.0f, 0.1f, 100.0f);
-    WVP = W * V * P;
-
-    // simple.fx（Technique1）でメッシュ描画
-    g_pEffect->SetTechnique("Technique1");
-    g_pEffect->SetMatrix("g_matWorldViewProj", &WVP);
-    D3DXVECTOR4 lightN(0.3f, 1.0f, 0.5f, 0.0f);
-    g_pEffect->SetVector("g_lightNormal", &lightN);
-
-    g_pd3dDevice->BeginScene();
+    // --- simple.fx でメッシュ描画（あなたの既存コードそのまま） ---
     {
-        UINT np = 0; g_pEffect->Begin(&np, 0); g_pEffect->BeginPass(0);
+        // 例: 行列・ライトなど（必要に応じて調整）
+        D3DXMATRIX W, V, P, WVP;
+        D3DXMatrixIdentity(&W);
+        D3DXVECTOR3 eye(0, 2.0f, -5.0f), at(0, 0.8f, 0), up(0, 1, 0);
+        D3DXMatrixLookAtLH(&V, &eye, &at, &up);
+        D3DXMatrixPerspectiveFovLH(&P, D3DXToRadian(60.f), 1600.0f/900.0f, 0.1f, 100.0f);
+        WVP = W * V * P;
 
+        g_pEffect->SetTechnique("Technique1");
+        g_pEffect->SetMatrix("g_matWorldViewProj", &WVP);
+
+        g_pd3dDevice->BeginScene();
+        UINT np = 0; g_pEffect->Begin(&np, 0); g_pEffect->BeginPass(0);
         for (DWORD i = 0; i < g_dwNumMaterials; ++i)
         {
-            // テクスチャがあればセット
             if (g_pTextures[i]) g_pEffect->SetTexture("texture1", g_pTextures[i]);
             g_pEffect->CommitChanges();
             g_pMesh->DrawSubset(i);
         }
-
         g_pEffect->EndPass(); g_pEffect->End();
+        g_pd3dDevice->EndScene();
     }
-    g_pd3dDevice->EndScene();
+    SAFE_RELEASE(rt);
 
-    SAFE_RELEASE(sceneRT); // RT0 はこのあと各パスで切替
-
-    //==============================================================
-    // 1) Bright Pass（g_pSceneTex → g_pBrightTex）
-    //==============================================================
+    //========================
+    // 1) Bright pass: Scene → Bright
+    //========================
     g_pBloomEffect->SetTechnique("BrightPass");
     g_pBloomEffect->SetTexture("g_SrcTex", g_pSceneTex);
-    SetTexelSizeFromTexture(g_pSceneTex);           // ソースのテクセルサイズ（重要）
-    g_pBloomEffect->SetFloat("g_Threshold", g_fThreshold);  // LDRなら 0.7〜1.0 推奨
+    SetTexelSizeFromTexture(g_pSceneTex);
+    g_pBloomEffect->SetFloat("g_Threshold", 0.30f); // しきい値（表示された値）
 
-    LPDIRECT3DSURFACE9 surf = NULL;
-    g_pBrightTex->GetSurfaceLevel(0, &surf);
-    g_pd3dDevice->SetRenderTarget(0, surf);
+    g_pBrightTex->GetSurfaceLevel(0, &rt);
+    g_pd3dDevice->SetRenderTarget(0, rt);
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);
     g_pd3dDevice->EndScene();
-    SAFE_RELEASE(surf);
+    SAFE_RELEASE(rt);
 
-    //==============================================================
-    // 2) Down チェーン（Bright → 1/2 → 1/4 → 1/8）
-    //==============================================================
+    //========================
+    // 2) Down チェーン: Bright → 1/2 → 1/4 → 1/8 …
+    //========================
     LPDIRECT3DTEXTURE9 src = g_pBrightTex;
     for (int i = 0; i < kLevels; ++i)
     {
@@ -440,67 +430,78 @@ static void Render()
         g_pBloomEffect->SetTexture("g_SrcTex", src);
         SetTexelSizeFromTexture(src);
 
-        g_pDown[i]->GetSurfaceLevel(0, &surf);
-        g_pd3dDevice->SetRenderTarget(0, surf);
+        g_pDown[i]->GetSurfaceLevel(0, &rt);
+        g_pd3dDevice->SetRenderTarget(0, rt);
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_pBloomEffect);
         g_pd3dDevice->EndScene();
-        SAFE_RELEASE(surf);
+        SAFE_RELEASE(rt);
 
         src = g_pDown[i];
     }
 
-    //==============================================================
-    // 3) Up チェーン（1/8 → 1/4 → 1/2 に足し戻し）
-    //==============================================================
-    const int last = kLevels - 1;
+    //========================
+    // 3) Starburst を最下段ではなく少し上の段で生成
+    //    → その結果を Up の起点にする（上書きしない）
+    //========================
+    const int last      = kLevels - 1;
+    const int starLevel = (last >= 3) ? 3 : last; // 例: 1/16 程度の段でスター生成
 
-    // 最下段コピー相当
-    g_pBloomEffect->SetTechnique("Upsample");
-    g_pBloomEffect->SetTexture("g_SrcTex",  g_pDown[last]);
-    g_pBloomEffect->SetTexture("g_SrcTex2", NULL);
-    SetTexelSizeFromTexture(g_pDown[last]);
+    g_pBloomEffect->SetTechnique("Starburst");
+    g_pBloomEffect->SetTexture("g_SrcTex", g_pDown[starLevel]);
+    SetTexelSizeFromTexture(g_pDown[starLevel]);
 
-    g_pUp[last]->GetSurfaceLevel(0, &surf);
-    g_pd3dDevice->SetRenderTarget(0, surf);
+    // パラメータ（お好みで調整）
+    g_pBloomEffect->SetInt  ("g_StreakCount",     6);      // 4/6/8 本
+    g_pBloomEffect->SetInt  ("g_StreakSteps",     10);     // 6〜12
+    g_pBloomEffect->SetFloat("g_StreakLengthPx",  80.0f);  // そのレベルでの長さ
+    g_pBloomEffect->SetFloat("g_StreakAtten",     0.88f);  // 0.7〜0.95
+    g_pBloomEffect->SetFloat("g_StreakAngleRad",  0.0f);
+    g_pBloomEffect->SetFloat("g_StreakIntensity", 1.5f);
+
+    g_pUp[starLevel]->GetSurfaceLevel(0, &rt);
+    g_pd3dDevice->SetRenderTarget(0, rt);
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);
     g_pd3dDevice->EndScene();
-    SAFE_RELEASE(surf);
+    SAFE_RELEASE(rt);
 
-    // 段を上がりながら加算（Up[i] + Down[i-1]）
-    for (int i = last; i >= 1; --i)
+    //========================
+    // 4) Up チェーン: Starburst入りの up[i] を起点に、上の解像度へ足し戻し
+    //    ★「最下段コピー相当」の Upsample は入れず、上書きしない
+    //========================
+    for (int i = starLevel; i >= 1; --i)
     {
         g_pBloomEffect->SetTechnique("Upsample");
-        g_pBloomEffect->SetTexture("g_SrcTex",  g_pUp[i]);
-        g_pBloomEffect->SetTexture("g_SrcTex2", g_pDown[i-1]);
+        g_pBloomEffect->SetTexture("g_SrcTex",  g_pUp[i]);     // 低解像度（スター入り）
+        g_pBloomEffect->SetTexture("g_SrcTex2", g_pDown[i-1]); // ひとつ上のダウン段
         SetTexelSizeFromTexture(g_pUp[i]);
 
-        g_pUp[i-1]->GetSurfaceLevel(0, &surf);
-        g_pd3dDevice->SetRenderTarget(0, surf);
+        g_pUp[i-1]->GetSurfaceLevel(0, &rt);
+        g_pd3dDevice->SetRenderTarget(0, rt);
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_pBloomEffect);
         g_pd3dDevice->EndScene();
-        SAFE_RELEASE(surf);
+        SAFE_RELEASE(rt);
     }
 
-    //==============================================================
-    // 4) 合成（Scene + Intensity * Up[0]） → バックバッファ
-    //==============================================================
-    g_pd3dDevice->SetRenderTarget(0, oldRT); // BackBuffer に戻す
+    //========================
+    // 5) 合成: Scene + Bloom → BackBuffer
+    //========================
+    g_pd3dDevice->SetRenderTarget(0, oldRT0);
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_SrcTex",   g_pUp[0]);
-    g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
+    g_pBloomEffect->SetTexture("g_SrcTex",   g_pUp[0]);   // Starburst も含まれた最終ブルーム
+    g_pBloomEffect->SetFloat("g_Intensity",  1.0f);
 
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);
     g_pd3dDevice->EndScene();
 
-    // 画面に出す
+    // 表示
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
-    SAFE_RELEASE(oldRT);
+    SAFE_RELEASE(oldRT0);
 }
 
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)

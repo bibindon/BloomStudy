@@ -120,3 +120,49 @@ technique Down       { pass P0 { PixelShader = compile ps_3_0 PS_Down();   } }
 technique Upsample   { pass P0 { PixelShader = compile ps_3_0 PS_UpsampleAdd(); } }
 technique Combine    { pass P0 { PixelShader = compile ps_3_0 PS_Combine(); } }
 
+// ==== 追加パラメータ ====
+int   g_StreakCount     = 8;     // アーム本数（4/6/8 など）
+int   g_StreakSteps     = 8;     // 1 本あたりのサンプル数（<=16 目安）
+float g_StreakLengthPx  = 60.0;  // このレベルの「ピクセル」単位の長さ
+float g_StreakAtten     = 0.85;  // 距離減衰（0.7〜0.95）
+float g_StreakAngleRad  = 0.0;   // 回転（ラジアン）
+float g_StreakIntensity = 5.0;   // 強さ
+
+// ==== 追加ピクセルシェーダ ====
+float4 PS_Starburst(float2 uv:TEXCOORD0) : COLOR
+{
+    float3 src = tex2D(SrcS, uv).rgb;
+
+    float2 texel = g_TexelSize;
+    float  denom = (float)(g_StreakCount * g_StreakSteps) * 2.0; // ±両方向
+
+    float3 acc = 0;
+
+    // 方向を等間隔に生成（[0, PI) に g_StreakCount 本）
+    [loop] for (int k = 0; k < 8; ++k)   // 上限8本
+    {
+        if (k >= g_StreakCount) break;
+
+        float ang = g_StreakAngleRad + (3.14159265 / (float)g_StreakCount) * k;
+        float2 dir = float2(cos(ang), sin(ang));
+
+        // 1本あたりの積分（±両方向）
+        [loop] for (int s = 1; s <= 16; ++s) // 上限16ステップ
+        {
+            if (s > g_StreakSteps) break;
+
+            float t = (float)s / (float)g_StreakSteps;
+            float2 offs = dir * (g_StreakLengthPx * t) * texel;
+            float  w    = pow(g_StreakAtten, (float)s);
+
+            acc += tex2Dlod(SrcS, float4(uv + offs, 0, 0)).rgb * w;
+            acc += tex2Dlod(SrcS, float4(uv - offs, 0, 0)).rgb * w; // 反対側も足す
+        }
+    }
+
+    float3 star = acc * (g_StreakIntensity / max(denom, 1.0));
+    return float4(src + star, 1);  // 元の明部にスターを加算
+}
+
+technique Starburst { pass P0 { PixelShader = compile ps_3_0 PS_Starburst(); } }
+
