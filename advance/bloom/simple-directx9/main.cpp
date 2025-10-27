@@ -37,7 +37,7 @@ LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 0.7f;
+float g_fIntensity = 0.5f;
 float g_fTime = 0.0f;
 
 struct SCREENVERTEX
@@ -231,10 +231,6 @@ void InitD3D(HWND hWnd)
     {
         w = (std::max)(1, w / 2);
         h = (std::max)(1, h / 2);
-
-//        float fWork = 1.f / (kLevels * 2);
-//        w = (std::max)(1, (int)(w * fWork));
-//        h = (std::max)(1, (int)(h * fWork));
 
         D3DXCreateTexture(g_pd3dDevice, w, h, 1,
                           D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,

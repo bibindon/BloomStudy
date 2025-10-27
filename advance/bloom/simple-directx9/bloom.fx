@@ -88,20 +88,30 @@ float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
 }
 
 // ------------- Upsample（拡大＋Add 合成）-------------
-float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
+float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
 {
     // 低解像度のブルーム（SrcS）をテントで少し広げて拡大
-    float2 s = g_TexelSize;
+    float2 texelSize = g_TexelSize;
 
-    float4 low  = ( tex2D(SrcS, uv) * 4.0 +
-                    tex2D(SrcS, uv + float2(+s.x, 0)) +
-                    tex2D(SrcS, uv + float2(-s.x, 0)) +
-                    tex2D(SrcS, uv + float2(0, +s.y)) +
-                    tex2D(SrcS, uv + float2(0, -s.y)) +
-                    tex2D(SrcS, uv + s) +
-                    tex2D(SrcS, uv + float2(+s.x, -s.y)) +
-                    tex2D(SrcS, uv + float2(-s.x, +s.y)) +
-                    tex2D(SrcS, uv - s) ) / 12.0;
+    // 1) 中心（重み 4）
+    float4 sumCenter = tex2D(SrcS, uv) * 4.0;
+
+    // 2) 上下左右（重み 1）
+    float4 sumCross = 0.0;
+    sumCross += tex2D(SrcS, uv + float2(+texelSize.x, 0.0));
+    sumCross += tex2D(SrcS, uv + float2(-texelSize.x, 0.0));
+    sumCross += tex2D(SrcS, uv + float2(0.0, +texelSize.y));
+    sumCross += tex2D(SrcS, uv + float2(0.0, -texelSize.y));
+
+    // 3) 斜め（重み 2）
+    float4 sumDiag = 0.0;
+    sumDiag += tex2D(SrcS, uv + texelSize) * 2.0;
+    sumDiag += tex2D(SrcS, uv + float2(+texelSize.x, -texelSize.y)) * 2.0;
+    sumDiag += tex2D(SrcS, uv + float2(-texelSize.x, +texelSize.y)) * 2.0;
+    sumDiag += tex2D(SrcS, uv - texelSize) * 2.0;
+
+    // 正規化（合計 16）
+    float4 low = (sumCenter + sumCross + sumDiag) / 16.0;
 
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
@@ -117,9 +127,9 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
     // 256段階ではなく768段階の輝度にしたい場合
     if (true)
     {
-        bloom.r += 0.2 / 256;
-        bloom.g += 0.7 / 256;
-        bloom.b += 0.1 / 256;
+        bloom.r += 0.666 / 256;
+        bloom.g += 0.333 / 256;
+        bloom.b += 0.000 / 256;
     }
 
     return float4(scene + bloom * g_Intensity, 1.0);
