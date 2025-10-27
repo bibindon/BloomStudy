@@ -84,8 +84,7 @@ float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
                 tex2D(SrcS, uv + float2(-s.x, +s.y)) +
                 tex2D(SrcS, uv - s);
 
-     //return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
-    return (c0 + cx + cc) / 9.0;
+    return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
 }
 
 // ------------- Upsample（拡大＋Add 合成）-------------
@@ -104,21 +103,9 @@ float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
                     tex2D(SrcS, uv + float2(-s.x, +s.y)) +
                     tex2D(SrcS, uv - s) ) / 12.0;
 
-    float4 low2  = (tex2D(SrcS, uv) +
-                    tex2D(SrcS, uv + float2(+s.x, 0)) +
-                    tex2D(SrcS, uv + float2(-s.x, 0)) +
-                    tex2D(SrcS, uv + float2(0, +s.y)) +
-                    tex2D(SrcS, uv + float2(0, -s.y)) +
-                    tex2D(SrcS, uv + s) +
-                    tex2D(SrcS, uv + float2(+s.x, -s.y)) +
-                    tex2D(SrcS, uv + float2(-s.x, +s.y)) +
-                    tex2D(SrcS, uv - s) ) / 9.0;
-
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
-//    return low * g_LevelGain + hi;
-    return low2 + hi;
-    //return low + hi;
+    return low + hi;
 }
 
 // -------------------- 最終合成 --------------------
@@ -128,11 +115,11 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
     float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
 
     // 256段階ではなく768段階の輝度にしたい場合
-    if (false)
+    if (true)
     {
-        bloom.r += 0.666 / 256;
-        bloom.g += 0.333 / 256;
-        bloom.b += 0.000 / 256;
+        bloom.r += 0.2 / 256;
+        bloom.g += 0.7 / 256;
+        bloom.b += 0.1 / 256;
     }
 
     return float4(scene + bloom * g_Intensity, 1.0);

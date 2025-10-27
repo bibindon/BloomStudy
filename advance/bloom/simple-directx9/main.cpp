@@ -32,7 +32,7 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 // 1/16あたりから始めれば問題ない。
-static const int kLevels = 16; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
+static const int kLevels = 11; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
 LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
@@ -227,7 +227,7 @@ void InitD3D(HWND hWnd)
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
 
     int w = 1600, h = 900;
-    for (int i = 0; i < kLevels; ++i)
+    for (int i = 4; i < kLevels; ++i)
     {
         w = (std::max)(1, w / 2);
         h = (std::max)(1, h / 2);
@@ -253,7 +253,7 @@ void Cleanup()
         SAFE_RELEASE(texture);
     }
 
-    for (int i = 0; i < kLevels; ++i)
+    for (int i = 4; i < kLevels; ++i)
     {
         SAFE_RELEASE(g_texDown[i]);
         SAFE_RELEASE(g_texUp[i]);
@@ -387,7 +387,7 @@ static void Render()
     // 2) Down チェーン（Bright → 1/2 → 1/4 → 1/8）
     //==============================================================
     LPDIRECT3DTEXTURE9 src = g_pBrightTex;
-    for (int i = 0; i < kLevels; ++i)
+    for (int i = 4; i < kLevels; ++i)
     {
         g_pBloomEffect->SetTechnique("Down");
         g_pBloomEffect->SetTexture("g_SrcTex", src);
@@ -428,7 +428,7 @@ static void Render()
     SAFE_RELEASE(surf);
 
     // 段を上がりながら加算（Up[i] + Down[i-1]）
-    for (int i = last; i >= 1; --i)
+    for (int i = last; i >= 5; --i)
     {
         g_pBloomEffect->SetTechnique("Upsample");
         g_pBloomEffect->SetTexture("g_SrcTex",  g_texUp[i]);
@@ -449,7 +449,8 @@ static void Render()
     g_pd3dDevice->SetRenderTarget(0, oldRT); // BackBuffer に戻す
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
+    //g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
+    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[4]);
     g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
 
     g_pd3dDevice->BeginScene();
