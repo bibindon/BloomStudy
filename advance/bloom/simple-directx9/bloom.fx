@@ -1,9 +1,17 @@
-// bloom.fx  — Down/Up ピラミッド方式
+// bloom.fx
 
 // === 入力テクスチャ ===
-texture g_SceneTex;   // 最終合成用（元シーン）
-texture g_SrcTex;     // 現在の処理の入力
-texture g_SrcTex2;    // Up 合成で使う“ひとつ上の解像度”のバッファ
+
+// 最終合成用（元シーン）
+texture g_SceneTex;
+
+// 現在の処理の入力
+texture g_SrcTex;
+
+// Up 合成で使う“ひとつ上の解像度”のバッファ
+texture g_SrcTex2;
+
+// MinFilterにPOINTを指定するとかなり変な結果になる
 
 sampler SceneS = sampler_state
 {
@@ -14,6 +22,7 @@ sampler SceneS = sampler_state
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+
 sampler SrcS = sampler_state
 {
     Texture = <g_SrcTex>;
@@ -23,6 +32,7 @@ sampler SrcS = sampler_state
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+
 sampler SrcS2 = sampler_state
 {
     Texture = <g_SrcTex2>;
@@ -34,23 +44,29 @@ sampler SrcS2 = sampler_state
 };
 
 // === パラメータ ===
-float2 g_TexelSize;   // ★「ソース側」の 1/幅,1/高 をセットすること（パスごとに更新）
-float  g_Threshold = 1.0f;  // 輝度しきい値（線形色）
-float  g_Intensity = 1.0f;  // ブルーム強度（最終合成）
+
+float2 g_TexelSize;
+
+float g_Threshold;
+
+float g_Intensity;
 
 // ---------------- Bright Pass（明部抽出） ----------------
-float3 LumaCoeffs = float3(0.299, 0.587, 0.114);
+
 float4 PS_Bright(float2 uv:TEXCOORD0) : COLOR
 {
-    float3 c = tex2D(SrcS, uv).rgb;
-    float  l = dot(c, LumaCoeffs);
-    float  m = max(0, l - g_Threshold);     // ソフトニーを入れたければ smoothstep へ変更可
-    float  k = m / max(l, 0.0001);
-    return float4(c * saturate(k), 1);
+    float3 color = tex2D(SrcS, uv).rgb;
+    float luminous = color.r * 0.2 + color.g * 0.7 + color.b * 0.1;
+    if (luminous < g_Threshold)
+    {
+        luminous = 0.f;
+    }
+
+    return float4(luminous, luminous, luminous, 1.0);
 }
 
 // ------------- Downsample（2x縮小＋テントフィルタ）-------------
-float4 PS_Down(float2 uv:TEXCOORD0) : COLOR
+float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
 {
     // 入力（SrcS）のテクセルサイズ
     float2 s = g_TexelSize;
@@ -71,8 +87,6 @@ float4 PS_Down(float2 uv:TEXCOORD0) : COLOR
      return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
     //return (c0 + cx + cc) / 9.0;
 }
-
-float g_LevelGain = 1.0;   // ← このパス（このレベル）専用の重み
 
 // ------------- Upsample（拡大＋Add 合成）-------------
 float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
@@ -102,9 +116,9 @@ float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
 
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
-    return low * g_LevelGain + hi;
+//    return low * g_LevelGain + hi;
     //return low2 * g_LevelGain + hi;
-    //return low2 + hi;
+    return low + hi;
 }
 
 // -------------------- 最終合成 --------------------
@@ -112,6 +126,15 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
 {
     float3 scene = tex2D(SceneS, uv).rgb;
     float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
+
+    // 256段階ではなく768段階の輝度にしたい場合
+    if (false)
+    {
+        bloom.r += 0.666 / 256;
+        bloom.g += 0.333 / 256;
+        bloom.b += 0.000 / 256;
+    }
+
     return float4(scene + bloom * g_Intensity, 1.0);
 }
 
