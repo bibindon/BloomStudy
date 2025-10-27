@@ -32,8 +32,8 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 static const int kLevels = 6; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
-LPDIRECT3DTEXTURE9 g_pDown[kLevels] = {0};
-LPDIRECT3DTEXTURE9 g_pUp[kLevels]   = {0};
+LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
+LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
 float g_fIntensity = 1.0f;
@@ -235,10 +235,13 @@ void InitD3D(HWND hWnd)
 //        w = (std::max)(1, (int)(w * fWork));
 //        h = (std::max)(1, (int)(h * fWork));
 
-        D3DXCreateTexture(g_pd3dDevice, w, h, 1, D3DUSAGE_RENDERTARGET,
-                          D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &g_pDown[i]);
-        D3DXCreateTexture(g_pd3dDevice, w, h, 1, D3DUSAGE_RENDERTARGET,
-                          D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &g_pUp[i]);
+        D3DXCreateTexture(g_pd3dDevice, w, h, 1,
+                          D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                          D3DPOOL_DEFAULT, &g_texDown[i]);
+
+        D3DXCreateTexture(g_pd3dDevice, w, h, 1,
+                          D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                          D3DPOOL_DEFAULT, &g_texUp[i]);
     }
 }
 
@@ -251,8 +254,8 @@ void Cleanup()
 
     for (int i = 0; i < kLevels; ++i)
     {
-        SAFE_RELEASE(g_pDown[i]);
-        SAFE_RELEASE(g_pUp[i]);
+        SAFE_RELEASE(g_texDown[i]);
+        SAFE_RELEASE(g_texUp[i]);
     }
 
     SAFE_RELEASE(g_pMesh);
@@ -387,7 +390,7 @@ static void Render()
         g_pBloomEffect->SetTexture("g_SrcTex", src);
         SetTexelSizeFromTexture(src);
 
-        g_pDown[i]->GetSurfaceLevel(0, &surf);
+        g_texDown[i]->GetSurfaceLevel(0, &surf);
         g_pd3dDevice->SetRenderTarget(0, surf);
 
         g_pd3dDevice->BeginScene();
@@ -397,7 +400,7 @@ static void Render()
         g_pd3dDevice->EndScene();
         SAFE_RELEASE(surf);
 
-        src = g_pDown[i];
+        src = g_texDown[i];
     }
 
     //==============================================================
@@ -407,12 +410,12 @@ static void Render()
 
     // 最下段コピー相当
     g_pBloomEffect->SetTechnique("Upsample");
-    g_pBloomEffect->SetTexture("g_SrcTex",  g_pDown[last]);
+    g_pBloomEffect->SetTexture("g_SrcTex",  g_texDown[last]);
     g_pBloomEffect->SetTexture("g_SrcTex2", NULL);
 
-    SetTexelSizeFromTexture(g_pDown[last]);
+    SetTexelSizeFromTexture(g_texDown[last]);
 
-    g_pUp[last]->GetSurfaceLevel(0, &surf);
+    g_texUp[last]->GetSurfaceLevel(0, &surf);
     g_pd3dDevice->SetRenderTarget(0, surf);
     g_pd3dDevice->BeginScene();
 
@@ -425,11 +428,11 @@ static void Render()
     for (int i = last; i >= 1; --i)
     {
         g_pBloomEffect->SetTechnique("Upsample");
-        g_pBloomEffect->SetTexture("g_SrcTex",  g_pUp[i]);
-        g_pBloomEffect->SetTexture("g_SrcTex2", g_pDown[i-1]);
-        SetTexelSizeFromTexture(g_pUp[i]);
+        g_pBloomEffect->SetTexture("g_SrcTex",  g_texUp[i]);
+        g_pBloomEffect->SetTexture("g_SrcTex2", g_texDown[i-1]);
+        SetTexelSizeFromTexture(g_texUp[i]);
 
-        g_pUp[i-1]->GetSurfaceLevel(0, &surf);
+        g_texUp[i-1]->GetSurfaceLevel(0, &surf);
         g_pd3dDevice->SetRenderTarget(0, surf);
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_pBloomEffect);
@@ -443,7 +446,7 @@ static void Render()
     g_pd3dDevice->SetRenderTarget(0, oldRT); // BackBuffer に戻す
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_SrcTex",   g_pUp[0]);
+    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
     g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
 
     g_pd3dDevice->BeginScene();
