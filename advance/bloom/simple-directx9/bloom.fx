@@ -84,8 +84,8 @@ float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
                 tex2D(SrcS, uv + float2(-s.x, +s.y)) +
                 tex2D(SrcS, uv - s);
 
-     return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
-    //return (c0 + cx + cc) / 9.0;
+     //return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
+    return (c0 + cx + cc) / 9.0;
 }
 
 // ------------- Upsample（拡大＋Add 合成）-------------
@@ -117,8 +117,8 @@ float4 PS_UpsampleAdd(float2 uv:TEXCOORD0) : COLOR
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
 //    return low * g_LevelGain + hi;
-    //return low2 * g_LevelGain + hi;
-    return low + hi;
+    return low2 + hi;
+    //return low + hi;
 }
 
 // -------------------- 最終合成 --------------------

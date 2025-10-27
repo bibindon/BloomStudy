@@ -31,12 +31,13 @@ LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
-static const int kLevels = 6; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
+// 1/16あたりから始めれば問題ない。
+static const int kLevels = 16; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
 LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 1.0f;
+float g_fIntensity = 0.7f;
 float g_fTime = 0.0f;
 
 struct SCREENVERTEX
@@ -375,9 +376,11 @@ static void Render()
     LPDIRECT3DSURFACE9 surf = NULL;
     g_pBrightTex->GetSurfaceLevel(0, &surf);
     g_pd3dDevice->SetRenderTarget(0, surf);
+
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);
     g_pd3dDevice->EndScene();
+
     SAFE_RELEASE(surf);
 
     //==============================================================
@@ -429,10 +432,10 @@ static void Render()
     {
         g_pBloomEffect->SetTechnique("Upsample");
         g_pBloomEffect->SetTexture("g_SrcTex",  g_texUp[i]);
-        g_pBloomEffect->SetTexture("g_SrcTex2", g_texDown[i-1]);
+        g_pBloomEffect->SetTexture("g_SrcTex2", g_texDown[i - 1]);
         SetTexelSizeFromTexture(g_texUp[i]);
 
-        g_texUp[i-1]->GetSurfaceLevel(0, &surf);
+        g_texUp[i - 1]->GetSurfaceLevel(0, &surf);
         g_pd3dDevice->SetRenderTarget(0, surf);
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_pBloomEffect);
