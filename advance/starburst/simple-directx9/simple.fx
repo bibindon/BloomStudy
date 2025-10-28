@@ -1,8 +1,9 @@
 float4x4 g_matWorldViewProj;
-float4 g_lightNormal = { 0.3f, 1.0f, 0.5f, 0.0f };
+float4 g_lightDir;
 
 texture texture1;
-sampler textureSampler = sampler_state {
+sampler textureSampler = sampler_state
+{
     Texture = (texture1);
     MipFilter = LINEAR;
     MinFilter = LINEAR;
@@ -19,7 +20,8 @@ void VertexShader1(in  float4 inPosition  : POSITION,
 {
     outPosition = mul(inPosition, g_matWorldViewProj);
 
-    float lightIntensity = dot(inNormal, g_lightNormal);
+    float4 vLightDir = normalize(g_lightDir);
+    float lightIntensity = dot(inNormal, vLightDir);
     outDiffuse.rgb = max(0, lightIntensity);
     outDiffuse.a = 1.0f;
 
