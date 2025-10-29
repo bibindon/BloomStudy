@@ -32,14 +32,14 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 // 1/16あたりから始めれば問題ない。そんなような気がしたが勘違いだったようだ
-static const int kLevels = 8; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
+static const int kLevels = 8; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
 static const int kStartIndex = 0;
 static const int kLevelRange = kLevels - kStartIndex;
 LPDIRECT3DTEXTURE9 g_texDown[kLevelRange] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevelRange]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 0.4f;
+float g_fIntensity = 0.5f;
 float g_fTime = 0.0f;
 
 struct SCREENVERTEX
@@ -435,6 +435,7 @@ static void Render()
     // 段を上がりながら加算（Up[i] + Down[i-1]）
     for (int i = last; i >= 1; --i)
     {
+
         g_pBloomEffect->SetTechnique("Upsample");
         g_pBloomEffect->SetTexture("g_SrcTex",  g_texUp[i]);
         g_pBloomEffect->SetTexture("g_SrcTex2", g_texDown[i - 1]);

@@ -27,7 +27,7 @@ LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
 bool g_bClose = false;
 
 // 追加：ブルーム解像度の縮小率（1=フル, 2=1/2, 4=1/4）
-int g_nBloomDownscale = 16;
+int g_nBloomDownscale = 8;
 
 // --- Bloom 用テクスチャ（※サーフェイスは都度ローカル取得） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;

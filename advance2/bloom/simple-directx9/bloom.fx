@@ -32,7 +32,7 @@ sampler BlurSampler = sampler_state
 };
 
 // === パラメータ ===
-float g_Threshold = 0.3f; // 輝度しきい値
+float g_Threshold = 0.6f; // 輝度しきい値
 float2 g_TexelSize; // (1/width, 1/height) : ブラー用
 
 // === BrightPass ===
@@ -49,8 +49,8 @@ float4 g_Direction;
 
 // 追加パラメータ
 float  g_BlurDecay   = 0.86;   // 0.82～0.90 で調整
-float  g_BlurStep    = 1.0;    // サンプル間隔（縮小RTでのピクセル基準）
-#define BLUR_SAMPLES 12        // 片側サンプル数（中心＋前後＝25tap）
+float  g_BlurStep    = 1.5;    // サンプル間隔（縮小RTでのピクセル基準）
+#define BLUR_SAMPLES 24        // 片側サンプル数（中心＋前後＝25tap）
 
 // 置き換え: BlurPS（横/縦とも共通。g_Direction=(1,0) or (0,1)）
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
@@ -77,36 +77,11 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 
         off += oneStep;
     }
+    
+    sum *= 3;
 
     return float4(sum / wsum, 1.0f);
 }
-
-/*
-// bloom.fx の BlurPS 改造版
-float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
-{
-    // g_Direction = (1,0) のとき横、(0,1) のとき縦
-    float2 step = g_TexelSize * g_Direction.xy;
-
-    float4 sum = 0;
-    float weightSum = 0;
-
-    // 半径固定（7 → 15tap）
-    static const int RADIUS = 12;
-    static const float SIGMA = 3.0f;
-    static const float STRETCH = 1.0f; // サンプル間隔（大きいほど長く）
-
-    [unroll]
-    for (int i = -RADIUS; i <= RADIUS; i++)
-    {
-        float t = i * STRETCH; // t ピクセル分
-        float w = exp(-(t * t) / (2.0 * SIGMA * SIGMA));
-        sum += tex2D(SrcSampler, texCoord + step * t) * w;
-        weightSum += w;
-    }
-    return sum / weightSum;
-}
-*/
 
 // === Combine ===
 // SceneTex + BlurTex を加算合成

@@ -84,34 +84,35 @@ float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
                 tex2D(SrcS, uv + float2(-s.x, +s.y)) +
                 tex2D(SrcS, uv - s);
 
-    return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
+    //return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
+    return (c0 + cx + cc) / 9.0;
 }
 
 // ------------- Upsample（拡大＋Add 合成）-------------
 float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
 {
-    // 低解像度のブルーム（SrcS）をテントで少し広げて拡大
     float2 texelSize = g_TexelSize;
 
     // 1) 中心（重み 4）
-    float4 sumCenter = tex2D(SrcS, uv) * 4.0;
+    float4 sumCenter = tex2D(SrcS, uv);
 
-    // 2) 上下左右（重み 1）
+    // 2) 上下左右
     float4 sumCross = 0.0;
     sumCross += tex2D(SrcS, uv + float2(+texelSize.x, 0.0));
     sumCross += tex2D(SrcS, uv + float2(-texelSize.x, 0.0));
     sumCross += tex2D(SrcS, uv + float2(0.0, +texelSize.y));
     sumCross += tex2D(SrcS, uv + float2(0.0, -texelSize.y));
 
-    // 3) 斜め（重み 2）
+    // 3) 斜め
     float4 sumDiag = 0.0;
-    sumDiag += tex2D(SrcS, uv + texelSize) * 2.0;
-    sumDiag += tex2D(SrcS, uv + float2(+texelSize.x, -texelSize.y)) * 2.0;
-    sumDiag += tex2D(SrcS, uv + float2(-texelSize.x, +texelSize.y)) * 2.0;
-    sumDiag += tex2D(SrcS, uv - texelSize) * 2.0;
+    sumDiag += tex2D(SrcS, uv + texelSize);
+    sumDiag += tex2D(SrcS, uv + float2(+texelSize.x, -texelSize.y));
+    sumDiag += tex2D(SrcS, uv + float2(-texelSize.x, +texelSize.y));
+    sumDiag += tex2D(SrcS, uv - texelSize);
 
     // 正規化（合計 16）
-    float4 low = (sumCenter + sumCross + sumDiag) / 16.0;
+    //float4 low = (sumCenter * 4 + sumCross * 2 + sumDiag) / 16.0;
+    float4 low = (sumCenter + sumCross + sumDiag) / 9.0;
 
     // ひとつ上のレベル（SrcS2）を加算
     float4 hi = tex2D(SrcS2, uv);
