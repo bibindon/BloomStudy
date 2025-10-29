@@ -39,7 +39,7 @@ LPDIRECT3DTEXTURE9 g_texDown[kLevelRange] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevelRange]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 0.4f;
+float g_fIntensity = 0.0f;
 float g_fTime = 0.0f;
 
 // 低解像度スターバーストで使うレベル
@@ -120,7 +120,7 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
     rect.left = 0;
 
     HWND hWnd = CreateWindow(_T("Window1"),
-                             _T("Bloom Sample"),
+                             _T("Starbusrt Sample"),
                              WS_OVERLAPPEDWINDOW,
                              CW_USEDEFAULT, CW_USEDEFAULT,
                              rect.right, rect.bottom,
