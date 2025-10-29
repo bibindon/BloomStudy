@@ -32,7 +32,7 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 // 1/16あたりから始めれば問題ない。そんなような気がしたが勘違いだったようだ
-static const int kLevels = 8; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
+static const int kLevels = 6; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
 static const int kStartIndex = 0;
 static const int kLevelRange = kLevels - kStartIndex;
 LPDIRECT3DTEXTURE9 g_texDown[kLevelRange] = {0};
@@ -228,11 +228,15 @@ void InitD3D(HWND hWnd)
                       D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
 
+    int w_ = 1600, h_ = 900;
     int w = 1600, h = 900;
     for (int i = 0; i < kLevels; ++i)
     {
         w = (std::max)(1, w / 2);
         h = (std::max)(1, h / 2);
+
+//        w = (std::max)(1, w_ / ((i + 1) * 2));
+//        h = (std::max)(1, h_ / ((i + 1) * 2));
 
         if (i < kStartIndex)
         {
@@ -332,7 +336,7 @@ static void Render()
     g_fTime += 0.005f;
 
     D3DXMatrixRotationY(&W, g_fTime);
-    D3DXVECTOR3 eye(0, 2.2f, -5.0f);
+    D3DXVECTOR3 eye(0, 5.0f, -10.0f);
     D3DXVECTOR3 at(0, 0.8f, 0);
     D3DXVECTOR3 up(0, 1, 0);
     D3DXMatrixLookAtLH(&V, &eye, &at, &up);
@@ -456,6 +460,8 @@ static void Render()
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
     g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
+//    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[4]);
+//    g_pBloomEffect->SetTexture("g_SrcTex",   g_texDown[0]);
     g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
 
     g_pd3dDevice->BeginScene();

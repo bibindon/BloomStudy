@@ -11,7 +11,7 @@ texture g_SrcTex;
 // Up 合成で使う“ひとつ上の解像度”のバッファ
 texture g_SrcTex2;
 
-// MinFilterにPOINTを指定するとかなり変な結果になる
+// MinFilterにLINEARを指定するとかなり変な結果になる
 
 sampler SceneS = sampler_state
 {
@@ -124,6 +124,8 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
 {
     float3 scene = tex2D(SceneS, uv).rgb;
     float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
+
+    bloom = pow(bloom, 0.5);
 
     // 256段階ではなく768段階の輝度にしたい場合
     if (true)
