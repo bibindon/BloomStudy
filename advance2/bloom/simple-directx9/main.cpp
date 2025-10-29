@@ -86,7 +86,7 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
     ATOM atom = RegisterClassEx(&wc);
     assert(atom != 0);
 
-    RECT rect; SetRect(&rect, 0, 0, 640, 480);
+    RECT rect; SetRect(&rect, 0, 0, 1600, 900);
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     rect.right = rect.right - rect.left;
     rect.bottom = rect.bottom - rect.top;
@@ -200,19 +200,19 @@ void InitD3D(HWND hWnd)
     assert(hResult == S_OK);
 
     // 各テクスチャ作成（サーフェイスは保持しない）
-    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pSceneTex);
 
-    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBrightTex);
 
-    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexH);
 
-    D3DXCreateTexture(g_pd3dDevice, 640, 480, 1,
+    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
 }
@@ -246,9 +246,9 @@ void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char*
     SCREENVERTEX vertices[4] =
     {
         { -0.5f,  -0.5f,   0, 1, 0, 0 },
-        { 639.5f, -0.5f,   0, 1, 1, 0 },
-        { -0.5f,  479.5f,  0, 1, 0, 1 },
-        { 639.5f, 479.5f,  0, 1, 1, 1 },
+        { 1600.f - 0.5f, -0.5f,   0, 1, 1, 0 },
+        { -0.5f,  900.f - 0.5f,  0, 1, 0, 1 },
+        { 1600.f - 0.5f, 900.f - 0.5f,  0, 1, 1, 1 },
     };
 
     g_pd3dDevice->SetFVF(D3DFVF_SCREENVERTEX);
@@ -270,7 +270,7 @@ void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char*
 void Render()
 {
     // ブラー用のテクセルサイズを設定 (解像度依存)
-    D3DXVECTOR4 texelSize(1.0f / 640.0f, 1.0f / 480.0f, 0, 0);
+    D3DXVECTOR4 texelSize(1.0f / 1600.0f, 1.0f / 900.0f, 0, 0);
     g_pBloomEffect->SetVector("g_TexelSize", &texelSize);
 
     static float f = 0.0f; f += 0.01f;
@@ -282,7 +282,7 @@ void Render()
     g_pd3dDevice->BeginScene();
     {
         D3DXMATRIX mat, View, Proj;
-        D3DXMatrixPerspectiveFovLH(&Proj, D3DXToRadian(45), 640.0f / 480.0f, 1.0f, 10000.0f);
+        D3DXMatrixPerspectiveFovLH(&Proj, D3DXToRadian(45), 1600.0f / 900.0f, 1.0f, 1000.0f);
         D3DXVECTOR3 eye(10 * sinf(f), 10, -10 * cosf(f));
         D3DXVECTOR3 at(0, 0, 0);
         D3DXVECTOR3 up(0, 1, 0);
