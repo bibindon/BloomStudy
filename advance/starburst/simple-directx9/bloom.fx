@@ -17,9 +17,9 @@ texture g_StreakTex;
 sampler SceneS = sampler_state
 {
     Texture  = <g_SceneTex>;
-    MinFilter = POINT;
-    MagFilter = POINT;
-    MipFilter = POINT;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
@@ -27,9 +27,9 @@ sampler SceneS = sampler_state
 sampler SrcS = sampler_state
 {
     Texture  = <g_SrcTex>;
-    MinFilter = POINT;
-    MagFilter = POINT;
-    MipFilter = POINT;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
@@ -37,9 +37,9 @@ sampler SrcS = sampler_state
 sampler SrcS2 = sampler_state
 {
     Texture  = <g_SrcTex2>;
-    MinFilter = POINT;
-    MagFilter = POINT;
-    MipFilter = POINT;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
@@ -47,9 +47,9 @@ sampler SrcS2 = sampler_state
 sampler StreakS = sampler_state
 {
     Texture  = <g_StreakTex>;
-    MinFilter = POINT;
-    MagFilter = POINT;
-    MipFilter = POINT;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
     AddressU = CLAMP;
     AddressV = CLAMP;
 };

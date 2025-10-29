@@ -47,6 +47,41 @@ float4 BrightPassPS(float2 texCoord : TEXCOORD0) : COLOR
 
 float4 g_Direction;
 
+// 追加パラメータ
+float  g_BlurDecay   = 0.86;   // 0.82～0.90 で調整
+float  g_BlurStep    = 1.0;    // サンプル間隔（縮小RTでのピクセル基準）
+#define BLUR_SAMPLES 12        // 片側サンプル数（中心＋前後＝25tap）
+
+// 置き換え: BlurPS（横/縦とも共通。g_Direction=(1,0) or (0,1)）
+float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
+{
+    float2 dir = normalize(g_Direction.xy);
+    float2 oneStep = dir * g_TexelSize * g_BlurStep;
+
+    float3 sum = tex2D(SrcSampler, texCoord).rgb;
+    float  w   = 1.0f;
+    float  wsum= 1.0f;
+
+    float2 off = oneStep;
+
+    [loop]
+    for (int i = 1; i <= BLUR_SAMPLES; i++)
+    {
+        w *= g_BlurDecay;
+
+        float3 fwd = tex2D(SrcSampler, texCoord + off).rgb;
+        float3 bwd = tex2D(SrcSampler, texCoord - off).rgb;
+
+        sum  += (fwd + bwd) * w;
+        wsum += 2.0f * w;
+
+        off += oneStep;
+    }
+
+    return float4(sum / wsum, 1.0f);
+}
+
+/*
 // bloom.fx の BlurPS 改造版
 float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
 {
@@ -57,9 +92,9 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     float weightSum = 0;
 
     // 半径固定（7 → 15tap）
-    static const int RADIUS = 40;
-    static const float SIGMA = 60.0f;
-    static const float STRETCH = 4.0f; // サンプル間隔（大きいほど長く）
+    static const int RADIUS = 12;
+    static const float SIGMA = 3.0f;
+    static const float STRETCH = 1.0f; // サンプル間隔（大きいほど長く）
 
     [unroll]
     for (int i = -RADIUS; i <= RADIUS; i++)
@@ -71,6 +106,7 @@ float4 BlurPS(float2 texCoord : TEXCOORD0) : COLOR
     }
     return sum / weightSum;
 }
+*/
 
 // === Combine ===
 // SceneTex + BlurTex を加算合成
@@ -78,9 +114,13 @@ float4 CombinePS(float2 texCoord : TEXCOORD0) : COLOR
 {
     float4 scene = tex2D(SceneSampler, texCoord);
     float4 bloom = tex2D(BlurSampler, texCoord);
+    
+    bloom.r += (1.0 / 256.0) * 0.666;
+    bloom.g += (1.0 / 256.0) * 0.333;
+    bloom.b += (1.0 / 256.0) * 0.000;
 
     // ブルームの濃さ
-    return scene + bloom * 2.0f;
+    return scene + bloom * 1.0f;
 }
 
 // === Techniques ===

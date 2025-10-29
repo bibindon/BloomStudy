@@ -26,6 +26,9 @@ LPD3DXEFFECT g_pEffect = NULL;        // simple.fx
 LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
 bool g_bClose = false;
 
+// 追加：ブルーム解像度の縮小率（1=フル, 2=1/2, 4=1/4）
+int g_nBloomDownscale = 16;
+
 // --- Bloom 用テクスチャ（※サーフェイスは都度ローカル取得） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
@@ -45,13 +48,26 @@ static void Render();
 static void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique);
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-// === Helper: テクスチャからRTを一時取得して設定（即Release） ===
+// 置き換え：RTをセットしたら、そのサイズでビューポートも更新
 static void SetRTFromTex(LPDIRECT3DTEXTURE9 tex)
 {
     LPDIRECT3DSURFACE9 rt = NULL;
-    tex->GetSurfaceLevel(0, &rt);                 // AddRef 済みで返る
-    g_pd3dDevice->SetRenderTarget(0, rt);         // Device 側が参照を保持
-    SAFE_RELEASE(rt);                             // 即ReleaseでOK
+    tex->GetSurfaceLevel(0, &rt);
+    g_pd3dDevice->SetRenderTarget(0, rt);
+
+    D3DSURFACE_DESC desc;
+    rt->GetDesc(&desc);
+
+    D3DVIEWPORT9 vp;
+    vp.X = 0;
+    vp.Y = 0;
+    vp.Width  = desc.Width;
+    vp.Height = desc.Height;
+    vp.MinZ = 0.0f;
+    vp.MaxZ = 1.0f;
+    g_pd3dDevice->SetViewport(&vp);
+
+    SAFE_RELEASE(rt);
 }
 
 static void SetRTBackBuffer()
@@ -59,6 +75,19 @@ static void SetRTBackBuffer()
     LPDIRECT3DSURFACE9 bb = NULL;
     g_pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb);
     g_pd3dDevice->SetRenderTarget(0, bb);
+
+    D3DSURFACE_DESC desc;
+    bb->GetDesc(&desc);
+
+    D3DVIEWPORT9 vp;
+    vp.X = 0;
+    vp.Y = 0;
+    vp.Width  = desc.Width;
+    vp.Height = desc.Height;
+    vp.MinZ = 0.0f;
+    vp.MaxZ = 1.0f;
+    g_pd3dDevice->SetViewport(&vp);
+
     SAFE_RELEASE(bb);
 }
 
@@ -199,22 +228,33 @@ void InitD3D(HWND hWnd)
                                        D3DXSHADER_DEBUG, NULL, &g_pBloomEffect, NULL);
     assert(hResult == S_OK);
 
-    // 各テクスチャ作成（サーフェイスは保持しない）
-    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
+    // 元のシーンはフル解像度
+    const int kFrameW = 1600;
+    const int kFrameH = 900;
+
+    D3DXCreateTexture(g_pd3dDevice, kFrameW, kFrameH, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pSceneTex);
 
-    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
+    // 追加：縮小解像度
+    int bloomW = (kFrameW / g_nBloomDownscale);
+    int bloomH = (kFrameH / g_nBloomDownscale);
+
+    // 輝度抽出先（縮小RT）
+    D3DXCreateTexture(g_pd3dDevice, bloomW, bloomH, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBrightTex);
 
-    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
+    // 横ブラー先（縮小RT）
+    D3DXCreateTexture(g_pd3dDevice, bloomW, bloomH, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexH);
 
-    D3DXCreateTexture(g_pd3dDevice, 1600, 900, 1,
+    // 縦ブラー先（縮小RT）
+    D3DXCreateTexture(g_pd3dDevice, bloomW, bloomH, 1,
                       D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
+
 }
 
 void Cleanup()
@@ -235,31 +275,39 @@ void Cleanup()
     SAFE_RELEASE(g_pD3D);
 }
 
-void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique)
+// 置き換え：現在のRTサイズからフルスクリーンクアッドを組み立てる
+static void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char* technique)
 {
-    // 固定機能（FVF）で描くため、前のパスの VS/頂点宣言を解除
     g_pd3dDevice->SetVertexShader(NULL);
     g_pd3dDevice->SetVertexDeclaration(NULL);
-
     g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
 
+    LPDIRECT3DSURFACE9 rt = NULL;
+    g_pd3dDevice->GetRenderTarget(0, &rt);
+    D3DSURFACE_DESC desc;
+    rt->GetDesc(&desc);
+    SAFE_RELEASE(rt);
+
+    struct SCREENVERTEX { float x, y, z, rhw; float u, v; };
     SCREENVERTEX vertices[4] =
     {
-        { -0.5f,  -0.5f,   0, 1, 0, 0 },
-        { 1600.f - 0.5f, -0.5f,   0, 1, 1, 0 },
-        { -0.5f,  900.f - 0.5f,  0, 1, 0, 1 },
-        { 1600.f - 0.5f, 900.f - 0.5f,  0, 1, 1, 1 },
+        { -0.5f,                  -0.5f,                   0, 1, 0, 0 },
+        { desc.Width  - 0.5f,     -0.5f,                   0, 1, 1, 0 },
+        { -0.5f,                  desc.Height - 0.5f,      0, 1, 0, 1 },
+        { desc.Width  - 0.5f,     desc.Height - 0.5f,      0, 1, 1, 1 },
     };
 
-    g_pd3dDevice->SetFVF(D3DFVF_SCREENVERTEX);
+    g_pd3dDevice->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
 
     effect->SetTechnique(technique);
-    if (tex) effect->SetTexture("g_SrcTex", tex);
+    if (tex != NULL)
+    {
+        effect->SetTexture("g_SrcTex", tex);
+    }
 
-    UINT nPass = 0;
-    effect->Begin(&nPass, 0);
+    UINT passCount = 0;
+    effect->Begin(&passCount, 0);
     effect->BeginPass(0);
-    // （BeginPass後にVSがバインドされるテクでも、上でNULLにしているので固定機能で通る）
     g_pd3dDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(SCREENVERTEX));
     effect->EndPass();
     effect->End();
@@ -267,78 +315,93 @@ void DrawFullScreenQuad(LPDIRECT3DTEXTURE9 tex, LPD3DXEFFECT effect, const char*
     g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
 }
 
+// 追加：テクスチャの解像度から g_TexelSize を設定するユーティリティ
+static void SetTexelSizeFromTexture(LPDIRECT3DTEXTURE9 tex)
+{
+    D3DSURFACE_DESC desc;
+    tex->GetLevelDesc(0, &desc);
+    D3DXVECTOR4 texelSize(1.0f / (float)desc.Width, 1.0f / (float)desc.Height, 0, 0);
+    g_pBloomEffect->SetVector("g_TexelSize", &texelSize);
+}
+
 void Render()
 {
-    // ブラー用のテクセルサイズを設定 (解像度依存)
-    D3DXVECTOR4 texelSize(1.0f / 1600.0f, 1.0f / 900.0f, 0, 0);
-    g_pBloomEffect->SetVector("g_TexelSize", &texelSize);
+    static float theta = 0.0f;
+    theta += 0.01f;
 
-    static float f = 0.0f; f += 0.01f;
-
-    // (1) シーンをテクスチャに描画 : 出力 = g_pSceneTex
+    // (1) シーンをフル解像度の g_pSceneTex へ
     SetRTFromTex(g_pSceneTex);
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
                         D3DCOLOR_XRGB(10, 10, 10), 1.0f, 0);
     g_pd3dDevice->BeginScene();
     {
-        D3DXMATRIX mat, View, Proj;
-        D3DXMatrixPerspectiveFovLH(&Proj, D3DXToRadian(45), 1600.0f / 900.0f, 1.0f, 1000.0f);
-        D3DXVECTOR3 eye(10 * sinf(f), 10, -10 * cosf(f));
+        D3DXMATRIX matWorldViewProj, matView, matProj;
+        D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45), 1600.0f / 900.0f, 1.0f, 1000.0f);
+        D3DXVECTOR3 eye(10 * sinf(theta), 10, -10 * cosf(theta));
         D3DXVECTOR3 at(0, 0, 0);
         D3DXVECTOR3 up(0, 1, 0);
-        D3DXMatrixLookAtLH(&View, &eye, &at, &up);
-        D3DXMatrixIdentity(&mat);
-        mat = mat * View * Proj;
-        g_pEffect->SetMatrix("g_matWorldViewProj", &mat);
+        D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
+        D3DXMatrixIdentity(&matWorldViewProj);
+        matWorldViewProj = matWorldViewProj * matView * matProj;
+        g_pEffect->SetMatrix("g_matWorldViewProj", &matWorldViewProj);
 
-        TCHAR msg[100]; _tcscpy_s(msg, 100, _T("ブルーム付きサンプル"));
+        TCHAR msg[100]; _tcscpy_s(msg, 100, _T("ブルーム（縮小RT）"));
         TextDraw(g_pFont, msg, 0, 0);
 
         g_pEffect->SetTechnique("Technique1");
-        UINT numPass; g_pEffect->Begin(&numPass, 0); g_pEffect->BeginPass(0);
+        UINT numPass = 0;
+        g_pEffect->Begin(&numPass, 0);
+        g_pEffect->BeginPass(0);
         for (DWORD i = 0; i < g_dwNumMaterials; i++)
         {
             g_pEffect->SetTexture("texture1", g_pTextures[i]);
             g_pEffect->CommitChanges();
             g_pMesh->DrawSubset(i);
         }
-        g_pEffect->EndPass(); g_pEffect->End();
+        g_pEffect->EndPass();
+        g_pEffect->End();
     }
     g_pd3dDevice->EndScene();
 
-    // (2) 輝度抽出 : 入力 = g_pSceneTex, 出力 = g_pBrightTex
+    // (2) 輝度抽出：入力はフル解像度の g_pSceneTex、出力は縮小RT g_pBrightTex
     SetRTFromTex(g_pBrightTex);
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuad(g_pSceneTex, g_pBloomEffect, "BrightPass");
     g_pd3dDevice->EndScene();
 
-    // (3a) 横ブラー : 入力 = g_pBrightTex, 出力 = g_pBlurTexH
+    // ブラーのテクセルサイズは「縮小RTの解像度」で設定する
+    SetTexelSizeFromTexture(g_pBrightTex);
+
+    // (3a) 横ブラー：入力 g_pBrightTex → 出力 g_pBlurTexH（どちらも縮小）
     SetRTFromTex(g_pBlurTexH);
     g_pd3dDevice->BeginScene();
     {
-        D3DXVECTOR4 direction1(1, 0, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction1);
+        D3DXVECTOR4 directionH(1, 0, 0, 0);
+        g_pBloomEffect->SetVector("g_Direction", &directionH);
         DrawFullScreenQuad(g_pBrightTex, g_pBloomEffect, "Blur");
     }
     g_pd3dDevice->EndScene();
 
-    // (3b) 縦ブラー : 入力 = g_pBlurTexH, 出力 = g_pBlurTexV
+    // (3b) 縦ブラー：入力 g_pBlurTexH → 出力 g_pBlurTexV（縮小）
+    // 入力テクスチャに合わせてテクセルサイズをもう一度設定しておくのが安全
+    SetTexelSizeFromTexture(g_pBlurTexH);
+
     SetRTFromTex(g_pBlurTexV);
     g_pd3dDevice->BeginScene();
     {
-        D3DXVECTOR4 direction2(0, 1, 0, 0);
-        g_pBloomEffect->SetVector("g_Direction", &direction2);
+        D3DXVECTOR4 directionV(0, 1, 0, 0);
+        g_pBloomEffect->SetVector("g_Direction", &directionV);
         DrawFullScreenQuad(g_pBlurTexH, g_pBloomEffect, "Blur");
     }
     g_pd3dDevice->EndScene();
 
-    // (4) 合成 : SceneTex + BlurTexV → BackBuffer
+    // (4) 合成：小さいブルームをそのままサンプルしてフル解像度へ加算
     SetRTBackBuffer();
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
     g_pd3dDevice->BeginScene();
     {
         g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-        g_pBloomEffect->SetTexture("g_BlurTex", g_pBlurTexV);
+        g_pBloomEffect->SetTexture("g_BlurTex",  g_pBlurTexV);
         DrawFullScreenQuad(NULL, g_pBloomEffect, "Combine");
     }
     g_pd3dDevice->EndScene();
