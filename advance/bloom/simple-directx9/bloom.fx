@@ -125,6 +125,8 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
     float3 scene = tex2D(SceneS, uv).rgb;
     float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
 
+    // 0.5倍してから0.5乗すると柔らかくて広い光になる
+    bloom *= 0.5;
     bloom = pow(bloom, 0.5);
 
     // 256段階ではなく768段階の輝度にしたい場合
