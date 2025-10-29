@@ -42,6 +42,19 @@ float g_fThreshold = 0.7f;
 float g_fIntensity = 0.4f;
 float g_fTime = 0.0f;
 
+// 低解像度スターバーストで使うレベル
+// i=0 が 1/2, i=1 が 1/4, i=2 が 1/8, i=3 が 1/16
+static const int kStreakLevel = 3;
+
+// スターバースト用 低解像度の蓄積テクスチャ
+LPDIRECT3DTEXTURE9 g_pStreakTex = NULL;
+
+// スターバースト用パラメータ
+float g_fStreakIntensity = 0.8f;
+float g_fStreakDecay     = 0.86f;
+float g_fStreakStep      = 1.5f;
+float g_fStreakGain      = 1.0f;
+
 struct SCREENVERTEX
 {
     float x, y, z, rhw;
@@ -228,7 +241,9 @@ void InitD3D(HWND hWnd)
                       D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
                       D3DPOOL_DEFAULT, &g_pBlurTexV);
 
-    int w = 1600, h = 900;
+    int w = 1600;
+    int h = 900;
+
     for (int i = 0; i < kLevels; ++i)
     {
         w = (std::max)(1, w / 2);
@@ -239,15 +254,22 @@ void InitD3D(HWND hWnd)
             continue;
         }
 
-        int i2 = i - kStartIndex;
+        int index2 = i - kStartIndex;
 
         D3DXCreateTexture(g_pd3dDevice, w, h, 1,
                           D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
-                          D3DPOOL_DEFAULT, &g_texDown[i2]);
+                          D3DPOOL_DEFAULT, &g_texDown[index2]);
 
         D3DXCreateTexture(g_pd3dDevice, w, h, 1,
                           D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
-                          D3DPOOL_DEFAULT, &g_texUp[i2]);
+                          D3DPOOL_DEFAULT, &g_texUp[index2]);
+
+        if (i == kStreakLevel)
+        {
+            D3DXCreateTexture(g_pd3dDevice, w, h, 1,
+                              D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                              D3DPOOL_DEFAULT, &g_pStreakTex);
+        }
     }
 }
 
@@ -411,6 +433,71 @@ static void Render()
         src = g_texDown[i];
     }
 
+    // ===== 2.5) 低解像度スターバースト生成 =====
+    {
+        // 出力先: g_pStreakTex
+        LPDIRECT3DSURFACE9 streakSurface = NULL;
+        g_pStreakTex->GetSurfaceLevel(0, &streakSurface);
+        g_pd3dDevice->SetRenderTarget(0, streakSurface);
+
+        // クリア（加算合成で蓄積するため黒）
+        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+        // 入力は Bright の低解像度
+        LPDIRECT3DTEXTURE9 streakSrc = g_texDown[kStreakLevel];
+
+        g_pBloomEffect->SetTechnique("StreakDirectional");
+        g_pBloomEffect->SetTexture("g_SrcTex", streakSrc);
+        SetTexelSizeFromTexture(streakSrc);
+
+        // パラメータ設定
+        g_pBloomEffect->SetFloat("g_StreakDecay",     g_fStreakDecay);
+        g_pBloomEffect->SetFloat("g_StreakStep",      g_fStreakStep);
+        g_pBloomEffect->SetFloat("g_StreakGain",      g_fStreakGain);
+
+        // 加算ブレンド有効化
+        g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+        g_pd3dDevice->SetRenderState(D3DRS_SRCBLEND,  D3DBLEND_ONE);
+        g_pd3dDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+
+        // 0°
+        {
+            D3DXVECTOR4 dir(1.0f, 0.0f, 0.0f, 0.0f);
+            g_pBloomEffect->SetVector("g_Direction", &dir);
+
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_pBloomEffect);
+            g_pd3dDevice->EndScene();
+        }
+
+        // 45°
+        {
+            const float invSqrt2 = 0.70710678f;
+            D3DXVECTOR4 dir(invSqrt2, invSqrt2, 0.0f, 0.0f);
+            g_pBloomEffect->SetVector("g_Direction", &dir);
+
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_pBloomEffect);
+            g_pd3dDevice->EndScene();
+        }
+
+        // 135°
+        {
+            const float invSqrt2 = 0.70710678f;
+            D3DXVECTOR4 dir(-invSqrt2, invSqrt2, 0.0f, 0.0f);
+            g_pBloomEffect->SetVector("g_Direction", &dir);
+
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_pBloomEffect);
+            g_pd3dDevice->EndScene();
+        }
+
+        // ブレンド無効化
+        g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+
+        SAFE_RELEASE(streakSurface);
+    }
+
     //==============================================================
     // 3) Up チェーン（1/8 → 1/4 → 1/2 に足し戻し）
     //==============================================================
@@ -449,13 +536,17 @@ static void Render()
     }
 
     //==============================================================
-    // 4) 合成（Scene + Intensity * Up[0]） → バックバッファ
+    // 4) 合成（Scene + Intensity * Up[0] + Starburst）
     //==============================================================
-    g_pd3dDevice->SetRenderTarget(0, oldRT); // BackBuffer に戻す
+
+    g_pd3dDevice->SetRenderTarget(0, oldRT);
+
     g_pBloomEffect->SetTechnique("Combine");
-    g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
-    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
-    g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
+    g_pBloomEffect->SetTexture("g_SceneTex",  g_pSceneTex);
+    g_pBloomEffect->SetTexture("g_SrcTex",    g_texUp[0]);   // Bloom（フル解像度）
+    g_pBloomEffect->SetTexture("g_StreakTex", g_pStreakTex); // ★ Starburst（低解像度）
+    g_pBloomEffect->SetFloat("g_Intensity",   g_fIntensity);
+    g_pBloomEffect->SetFloat("g_StreakIntensity", g_fStreakIntensity);
 
     g_pd3dDevice->BeginScene();
     DrawFullScreenQuadCurrentRT(g_pBloomEffect);

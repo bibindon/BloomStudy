@@ -1,4 +1,4 @@
-// bloom.fx
+// bloom.fx  — Bloom + Starburst (0°, 45°, 135°) 低解像度演算
 
 // === 入力テクスチャ ===
 
@@ -11,11 +11,12 @@ texture g_SrcTex;
 // Up 合成で使う“ひとつ上の解像度”のバッファ
 texture g_SrcTex2;
 
-// MinFilterにPOINTを指定するとかなり変な結果になる
+// スターバースト蓄積（低解像度で生成したものをそのまま合成時に拡大サンプル）
+texture g_StreakTex;
 
 sampler SceneS = sampler_state
 {
-    Texture = <g_SceneTex>;
+    Texture  = <g_SceneTex>;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
     MipFilter = LINEAR;
@@ -25,7 +26,7 @@ sampler SceneS = sampler_state
 
 sampler SrcS = sampler_state
 {
-    Texture = <g_SrcTex>;
+    Texture  = <g_SrcTex>;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
     MipFilter = LINEAR;
@@ -35,7 +36,17 @@ sampler SrcS = sampler_state
 
 sampler SrcS2 = sampler_state
 {
-    Texture = <g_SrcTex2>;
+    Texture  = <g_SrcTex2>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+sampler StreakS = sampler_state
+{
+    Texture  = <g_StreakTex>;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
     MipFilter = LINEAR;
@@ -51,92 +62,144 @@ float g_Threshold;
 
 float g_Intensity;
 
+// --- スターバースト用 ---
+float2 g_Direction;
+float  g_StreakDecay;       // 0.80～0.92 あたり
+float  g_StreakStep;        // 1.0～2.0 ピクセル相当
+float  g_StreakIntensity;   // 最終合成時の強さ
+float  g_StreakGain;        // 方向ブラー内部ゲイン
+
 // ---------------- Bright Pass（明部抽出） ----------------
 
-float4 PS_Bright(float2 uv:TEXCOORD0) : COLOR
+float4 PS_Bright(float2 inUv : TEXCOORD0) : COLOR
 {
-    float3 color = tex2D(SrcS, uv).rgb;
-    float luminous = color.r * 0.2 + color.g * 0.7 + color.b * 0.1;
+    float3 srcRgb = tex2D(SrcS, inUv).rgb;
+
+    float luminous =
+        srcRgb.r * 0.2 +
+        srcRgb.g * 0.7 +
+        srcRgb.b * 0.1;
+
     if (luminous < g_Threshold)
     {
-        luminous = 0.f;
+        luminous = 0.0;
     }
 
     return float4(luminous, luminous, luminous, 1.0);
 }
 
 // ------------- Downsample（2x縮小＋テントフィルタ）-------------
-float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
+float4 PS_Down(float2 inUv : TEXCOORD0) : COLOR
 {
-    // 入力（SrcS）のテクセルサイズ
-    float2 s = g_TexelSize;
+    float2 stepUv = g_TexelSize;
 
-    // テント（中心=4, クロス=2, 隅=1）/16
-    float4 c0 = tex2D(SrcS, uv);
+    float4 center = tex2D(SrcS, inUv);
 
-    float4 cx = tex2D(SrcS, uv + float2(+s.x,    0)) +
-                tex2D(SrcS, uv + float2(-s.x,    0)) +
-                tex2D(SrcS, uv + float2(   0, +s.y)) +
-                tex2D(SrcS, uv + float2(   0, -s.y));
+    float4 crossSum =
+          tex2D(SrcS, inUv + float2(+stepUv.x, 0))
+        + tex2D(SrcS, inUv + float2(-stepUv.x, 0))
+        + tex2D(SrcS, inUv + float2(0, +stepUv.y))
+        + tex2D(SrcS, inUv + float2(0, -stepUv.y));
 
-    float4 cc = tex2D(SrcS, uv + s) +
-                tex2D(SrcS, uv + float2(+s.x, -s.y)) +
-                tex2D(SrcS, uv + float2(-s.x, +s.y)) +
-                tex2D(SrcS, uv - s);
+    float4 diagSum =
+          tex2D(SrcS, inUv + stepUv)
+        + tex2D(SrcS, inUv + float2(+stepUv.x, -stepUv.y))
+        + tex2D(SrcS, inUv + float2(-stepUv.x, +stepUv.y))
+        + tex2D(SrcS, inUv - stepUv);
 
-    return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
+    return (center * 4.0 + crossSum * 2.0 + diagSum) / 16.0;
 }
 
 // ------------- Upsample（拡大＋Add 合成）-------------
-float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
+float4 PS_UpsampleAdd(float2 inUv : TEXCOORD0) : COLOR
 {
-    // 低解像度のブルーム（SrcS）をテントで少し広げて拡大
-    float2 texelSize = g_TexelSize;
+    float2 stepUv = g_TexelSize;
 
-    // 1) 中心（重み 4）
-    float4 sumCenter = tex2D(SrcS, uv) * 4.0;
+    float4 center = tex2D(SrcS, inUv) * 4.0;
 
-    // 2) 上下左右（重み 1）
-    float4 sumCross = 0.0;
-    sumCross += tex2D(SrcS, uv + float2(+texelSize.x, 0.0));
-    sumCross += tex2D(SrcS, uv + float2(-texelSize.x, 0.0));
-    sumCross += tex2D(SrcS, uv + float2(0.0, +texelSize.y));
-    sumCross += tex2D(SrcS, uv + float2(0.0, -texelSize.y));
+    float4 crossSum = 0.0;
+    crossSum += tex2D(SrcS, inUv + float2(+stepUv.x, 0));
+    crossSum += tex2D(SrcS, inUv + float2(-stepUv.x, 0));
+    crossSum += tex2D(SrcS, inUv + float2(0, +stepUv.y));
+    crossSum += tex2D(SrcS, inUv + float2(0, -stepUv.y));
 
-    // 3) 斜め（重み 2）
-    float4 sumDiag = 0.0;
-    sumDiag += tex2D(SrcS, uv + texelSize) * 2.0;
-    sumDiag += tex2D(SrcS, uv + float2(+texelSize.x, -texelSize.y)) * 2.0;
-    sumDiag += tex2D(SrcS, uv + float2(-texelSize.x, +texelSize.y)) * 2.0;
-    sumDiag += tex2D(SrcS, uv - texelSize) * 2.0;
+    float4 diagSum = 0.0;
+    diagSum += tex2D(SrcS, inUv + stepUv) * 2.0;
+    diagSum += tex2D(SrcS, inUv + float2(+stepUv.x, -stepUv.y)) * 2.0;
+    diagSum += tex2D(SrcS, inUv + float2(-stepUv.x, +stepUv.y)) * 2.0;
+    diagSum += tex2D(SrcS, inUv - stepUv) * 2.0;
 
-    // 正規化（合計 16）
-    float4 low = (sumCenter + sumCross + sumDiag) / 16.0;
+    float4 low = (center + crossSum + diagSum) / 16.0;
 
-    // ひとつ上のレベル（SrcS2）を加算
-    float4 hi = tex2D(SrcS2, uv);
+    float4 hi = tex2D(SrcS2, inUv);
+
     return low + hi;
 }
 
-// -------------------- 最終合成 --------------------
-float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
-{
-    float3 scene = tex2D(SceneS, uv).rgb;
-    float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
+// -------- スターバースト（指定方向の多タップ・ブラー）--------
+#define STREAK_SAMPLES 12
 
-    // 256段階ではなく768段階の輝度にしたい場合
-    if (true)
+float4 PS_StreakDirectional(float2 inUv : TEXCOORD0) : COLOR
+{
+    float2 dirNorm = normalize(g_Direction);
+
+    float2 oneStep = dirNorm * g_TexelSize * g_StreakStep;
+
+    float3 sumColor = tex2D(SrcS, inUv).rgb;
+
+    float  decayWeight = 1.0;
+    float  weightAccum = 1.0;
+
+    float2 offsetUv = oneStep;
+
+    [loop]
+    for (int i = 1; i <= STREAK_SAMPLES; ++i)
     {
-        bloom.r += 0.666 / 256;
-        bloom.g += 0.333 / 256;
-        bloom.b += 0.000 / 256;
+        decayWeight *= g_StreakDecay;
+
+        float3 forwardSample = tex2D(SrcS, inUv + offsetUv).rgb;
+        float3 backwardSample = tex2D(SrcS, inUv - offsetUv).rgb;
+
+        sumColor += (forwardSample + backwardSample) * decayWeight;
+
+        weightAccum += 2.0 * decayWeight;
+
+        offsetUv += oneStep;
     }
 
-    return float4(scene + bloom * g_Intensity, 1.0);
+    float3 result = (sumColor / weightAccum) * g_StreakGain;
+
+    return float4(result, 1.0);
+}
+
+// -------------------- 最終合成 --------------------
+float4 PS_Combine(float2 inUv : TEXCOORD0) : COLOR
+{
+    float3 sceneRgb  = tex2D(SceneS,  inUv).rgb;
+
+    float3 bloomRgb  = tex2D(SrcS,    inUv).rgb;
+
+    float3 streakRgb = tex2D(StreakS, inUv).rgb;
+
+    if (true)
+    {
+        bloomRgb.r += 0.666 / 256;
+        bloomRgb.g += 0.333 / 256;
+        bloomRgb.b += 0.000 / 256;
+    }
+
+    float3 outRgb = sceneRgb
+                  + bloomRgb * g_Intensity
+                  + streakRgb * g_StreakIntensity;
+
+    return float4(outRgb, 1.0);
 }
 
 technique BrightPass { pass P0 { PixelShader = compile ps_3_0 PS_Bright(); } }
 technique Down       { pass P0 { PixelShader = compile ps_3_0 PS_Down();   } }
 technique Upsample   { pass P0 { PixelShader = compile ps_3_0 PS_UpsampleAdd(); } }
-technique Combine    { pass P0 { PixelShader = compile ps_3_0 PS_Combine(); } }
 
+// 新規：低解像度の方向ブラー
+technique StreakDirectional { pass P0 { PixelShader = compile ps_3_0 PS_StreakDirectional(); } }
+
+technique Combine    { pass P0 { PixelShader = compile ps_3_0 PS_Combine(); } }
