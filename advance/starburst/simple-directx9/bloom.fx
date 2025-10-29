@@ -75,7 +75,7 @@ float4 PS_BrightDown(float2 uv : TEXCOORD0) : COLOR
 }
 
 // スターバースト（指定方向の対称 1D ブラー、指数減衰）
-#define STREAK_SAMPLES 12
+#define STREAK_SAMPLES 25
 
 float4 PS_StreakDirectional(float2 uv : TEXCOORD0) : COLOR
 {

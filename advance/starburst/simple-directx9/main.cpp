@@ -52,15 +52,15 @@ float g_time = 0.0f;
 float g_threshold = 0.7f;
 
 // スターバースト強度
-float g_streakIntensity = 0.8f;
+float g_streakIntensity = 1.8f;
 
 // スターバーストの減衰・ステップ・ゲイン
 float g_streakDecay = 0.86f;
 float g_streakStep  = 1.5f;
-float g_streakGain  = 1.0f;
+float g_streakGain  = 2.0f;
 
 // スターバースト縮小率（2=1/2, 4=1/4, 8=1/8, 16=1/16）
-int g_nStreakDownscale = 16;
+int g_nStreakDownscale = 4;
 
 static void SetTexelSizeFromTexture(LPDIRECT3DTEXTURE9 texture, LPD3DXEFFECT effect, const char* paramName)
 {
