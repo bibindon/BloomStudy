@@ -23,7 +23,7 @@ std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
 DWORD g_dwNumMaterials = 0;
 LPD3DXEFFECT g_pEffect = NULL;        // simple.fx
 LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
-bool g_bClose = false;
+bool g_bClose = false;  
 
 // --- Bloom 用テクスチャ（※サーフェイスは都度ローカル取得） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
@@ -44,7 +44,7 @@ float g_fTime = 0.0f;
 
 // 低解像度スターバーストで使うレベル
 // i=0 が 1/2, i=1 が 1/4, i=2 が 1/8, i=3 が 1/16
-static const int kStreakLevel = 3;
+static const int kStreakLevel = 4;
 
 // スターバースト用 低解像度の蓄積テクスチャ
 LPDIRECT3DTEXTURE9 g_pStreakTex = NULL;
@@ -52,7 +52,7 @@ LPDIRECT3DTEXTURE9 g_pStreakTex = NULL;
 // スターバースト用パラメータ
 float g_fStreakIntensity = 0.8f;
 float g_fStreakDecay     = 0.86f;
-float g_fStreakStep      = 1.5f;
+float g_fStreakStep      = 1.0f;
 float g_fStreakGain      = 1.0f;
 
 struct SCREENVERTEX
