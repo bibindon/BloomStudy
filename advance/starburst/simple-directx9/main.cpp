@@ -43,12 +43,19 @@ bool g_shouldClose = false;
 
 float g_time = 0.0f;
 float g_threshold = 0.7f;
+
 float g_streakIntensity = 1.0f;
+
+// 減衰
 float g_streakDecay = 0.86f;
+
+// 隣のピクセルを見るときの幅
 float g_streakStep  = 1.5f;
+
+// よくわからない。
 float g_streakGain  = 2.0f;
 
-// スターバースト縮小率（2=1/2, 4=1/4, 8=1/8, 16=1/16）
+// どれくらい小さいテクスチャで行うか（2=1/2, 4=1/4, 8=1/8, 16=1/16）
 int g_nStreakDownscale = 4;
 
 static void SetTexelSizeFromTexture(LPDIRECT3DTEXTURE9 texture,
@@ -56,15 +63,10 @@ static void SetTexelSizeFromTexture(LPDIRECT3DTEXTURE9 texture,
                                     const char* paramName);
 
 static void SetRenderTargetFromTexture(LPDIRECT3DTEXTURE9 texture);
-
 static void SetRenderTargetToBackbuffer();
-
 static void DrawFullScreenQuadCurrentRT(LPD3DXEFFECT effect);
-
 static void InitD3D(HWND hWnd);
-
 static void Cleanup();
-
 static void Render();
 
 static LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -203,7 +205,8 @@ static void InitD3D(HWND hWnd)
 
     LPDIRECT3DSURFACE9 backBuffer = NULL;
     g_pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer);
-    D3DSURFACE_DESC bbDesc;
+
+    D3DSURFACE_DESC bbDesc { };
     backBuffer->GetDesc(&bbDesc);
     SAFE_RELEASE(backBuffer);
 
@@ -217,10 +220,12 @@ static void InitD3D(HWND hWnd)
 
     int smallWidth  = (frameWidth  / g_nStreakDownscale);
     int smallHeight = (frameHeight / g_nStreakDownscale);
+
     if (smallWidth < 1)
     {
         smallWidth = 1;
     }
+
     if (smallHeight < 1)
     {
         smallHeight = 1;
@@ -265,7 +270,7 @@ static void Render()
 
     SetRenderTargetFromTexture(g_texBasic);
     g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-                        D3DCOLOR_XRGB(10, 10, 10), 1.0f, 0);
+                        D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     D3DXMATRIX matWorld;
     D3DXMATRIX matView;
@@ -273,9 +278,11 @@ static void Render()
     D3DXMATRIX matWVP;
 
     D3DXMatrixRotationY(&matWorld, g_time);
+
     D3DXVECTOR3 eye(0.0f, 2.2f, -5.0f);
     D3DXVECTOR3 at(0.0f, 0.8f, 0.0f);
     D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+
     D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
 
     LPDIRECT3DSURFACE9 sceneSurface = NULL;
@@ -293,8 +300,13 @@ static void Render()
     D3DXVec4Normalize(&lightDir, &lightDir);
     g_fxBasic->SetVector("g_lightDir", &lightDir);
 
-    g_pd3dDevice->BeginScene();
+
+    //-------------------------------------------------------------
+    // 通常の描画
+    //-------------------------------------------------------------
     {
+        g_pd3dDevice->BeginScene();
+
         g_fxBasic->SetTechnique("Technique1");
         g_fxBasic->SetMatrix("g_matWorldViewProj", &matWVP);
 
@@ -314,74 +326,92 @@ static void Render()
 
         g_fxBasic->EndPass();
         g_fxBasic->End();
+
+        g_pd3dDevice->EndScene();
     }
-    g_pd3dDevice->EndScene();
 
-    SetRenderTargetFromTexture(g_texStreakSrc);
-    g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-
-    g_fxStarburst->SetTechnique("BrightDown");
-    g_fxStarburst->SetTexture("g_SrcTex", g_texBasic);
-    g_fxStarburst->SetFloat("g_Threshold", g_threshold);
-    SetTexelSizeFromTexture(g_texBasic, g_fxStarburst, "g_TexelSize");
-
-    g_pd3dDevice->BeginScene();
-    DrawFullScreenQuadCurrentRT(g_fxStarburst);
-    g_pd3dDevice->EndScene();
-
-    SetRenderTargetFromTexture(g_texStreak);
-    g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-
-    g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-    g_pd3dDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
-    g_pd3dDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
-
-    g_fxStarburst->SetTechnique("StreakDirectional");
-    g_fxStarburst->SetTexture("g_SrcTex", g_texStreakSrc);
-    g_fxStarburst->SetFloat("g_StreakDecay", g_streakDecay);
-    g_fxStarburst->SetFloat("g_StreakStep",  g_streakStep);
-    g_fxStarburst->SetFloat("g_StreakGain",  g_streakGain);
-    SetTexelSizeFromTexture(g_texStreakSrc, g_fxStarburst, "g_TexelSize");
-
+    //-------------------------------------------------------------
+    // 明るい部分を抽出
+    //-------------------------------------------------------------
     {
-        D3DXVECTOR4 dirRight(1.0f, 0.0f, 0.0f, 0.0f);
-        g_fxStarburst->SetVector("g_Direction", &dirRight);
+        SetRenderTargetFromTexture(g_texStreakSrc);
+        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+        g_fxStarburst->SetTechnique("BrightDown");
+        g_fxStarburst->SetTexture("g_SrcTex", g_texBasic);
+        g_fxStarburst->SetFloat("g_Threshold", g_threshold);
+        SetTexelSizeFromTexture(g_texBasic, g_fxStarburst, "g_TexelSize");
+
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_fxStarburst);
         g_pd3dDevice->EndScene();
     }
 
+    //-------------------------------------------------------------
+    // 光の筋を描画
+    //-------------------------------------------------------------
     {
-        const float r = 0.70710678f;
-        D3DXVECTOR4 dir45(r, r, 0.0f, 0.0f);
-        g_fxStarburst->SetVector("g_Direction", &dir45);
+
+        SetRenderTargetFromTexture(g_texStreak);
+        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+        g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+        g_pd3dDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+        g_pd3dDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+
+        g_fxStarburst->SetTechnique("StreakDirectional");
+        g_fxStarburst->SetTexture("g_SrcTex", g_texStreakSrc);
+        g_fxStarburst->SetFloat("g_StreakDecay", g_streakDecay);
+        g_fxStarburst->SetFloat("g_StreakStep",  g_streakStep);
+        g_fxStarburst->SetFloat("g_StreakGain",  g_streakGain);
+        SetTexelSizeFromTexture(g_texStreakSrc, g_fxStarburst, "g_TexelSize");
+
+        {
+            D3DXVECTOR4 dirRight(1.0f, 0.0f, 0.0f, 0.0f);
+            g_fxStarburst->SetVector("g_Direction", &dirRight);
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_fxStarburst);
+            g_pd3dDevice->EndScene();
+        }
+
+        {
+            const float r = 0.70710678f;
+            D3DXVECTOR4 dir45(r, r, 0.0f, 0.0f);
+            g_fxStarburst->SetVector("g_Direction", &dir45);
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_fxStarburst);
+            g_pd3dDevice->EndScene();
+        }
+
+        {
+            const float r = 0.70710678f;
+            D3DXVECTOR4 dir135(-r, r, 0.0f, 0.0f);
+            g_fxStarburst->SetVector("g_Direction", &dir135);
+            g_pd3dDevice->BeginScene();
+            DrawFullScreenQuadCurrentRT(g_fxStarburst);
+            g_pd3dDevice->EndScene();
+        }
+
+    }
+
+    //-------------------------------------------------------------
+    // 結果を合成
+    //-------------------------------------------------------------
+    {
+        g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+
+        SetRenderTargetToBackbuffer();
+        g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+        g_fxStarburst->SetTechnique("Combine");
+        g_fxStarburst->SetTexture("g_SceneTex",  g_texBasic);
+        g_fxStarburst->SetTexture("g_StreakTex", g_texStreak);
+        g_fxStarburst->SetFloat("g_StreakIntensity", g_streakIntensity);
+
         g_pd3dDevice->BeginScene();
         DrawFullScreenQuadCurrentRT(g_fxStarburst);
         g_pd3dDevice->EndScene();
     }
-
-    {
-        const float r = 0.70710678f;
-        D3DXVECTOR4 dir135(-r, r, 0.0f, 0.0f);
-        g_fxStarburst->SetVector("g_Direction", &dir135);
-        g_pd3dDevice->BeginScene();
-        DrawFullScreenQuadCurrentRT(g_fxStarburst);
-        g_pd3dDevice->EndScene();
-    }
-
-    g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-
-    SetRenderTargetToBackbuffer();
-    g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-
-    g_fxStarburst->SetTechnique("Combine");
-    g_fxStarburst->SetTexture("g_SceneTex",  g_texBasic);
-    g_fxStarburst->SetTexture("g_StreakTex", g_texStreak);
-    g_fxStarburst->SetFloat("g_StreakIntensity", g_streakIntensity);
-
-    g_pd3dDevice->BeginScene();
-    DrawFullScreenQuadCurrentRT(g_fxStarburst);
-    g_pd3dDevice->EndScene();
 
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
@@ -408,10 +438,10 @@ static void SetRenderTargetFromTexture(LPDIRECT3DTEXTURE9 texture)
     texture->GetSurfaceLevel(0, &surface);
     g_pd3dDevice->SetRenderTarget(0, surface);
 
-    D3DSURFACE_DESC desc;
+    D3DSURFACE_DESC desc { };
     surface->GetDesc(&desc);
 
-    D3DVIEWPORT9 vp;
+    D3DVIEWPORT9 vp { };
     vp.X = 0;
     vp.Y = 0;
     vp.Width  = desc.Width;
@@ -429,10 +459,10 @@ static void SetRenderTargetToBackbuffer()
     g_pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer);
     g_pd3dDevice->SetRenderTarget(0, backBuffer);
 
-    D3DSURFACE_DESC desc;
+    D3DSURFACE_DESC desc { };
     backBuffer->GetDesc(&desc);
 
-    D3DVIEWPORT9 vp;
+    D3DVIEWPORT9 vp { };
     vp.X = 0;
     vp.Y = 0;
     vp.Width  = desc.Width;
