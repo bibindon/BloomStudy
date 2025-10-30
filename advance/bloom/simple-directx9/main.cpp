@@ -1,4 +1,19 @@
-﻿#pragma comment( lib, "d3d9.lib" )
+﻿
+// 3x3のボカシを小さい解像度のテクスチャで行う方式
+//
+// 手順 1
+// 画面サイズの1/2のテクスチャを作り、1/4のテクスチャを作り、1/8、1/16のテクスチャを作る
+//
+// 手順2
+// それぞれのテクスチャで明るい部分に対して3x3のボカシを行う
+//
+// 手順3
+// テクスチャを合体させる。
+//
+// この方式の特徴として、ボケの範囲が狭く、中央が強烈に明るくなる問題がある。
+// そこで、最後のボケ画像で0.5乗すると弱くて広い光にできる
+
+#pragma comment( lib, "d3d9.lib" )
 #if defined(DEBUG) || defined(_DEBUG)
 #pragma comment( lib, "d3dx9d.lib" )
 #else
@@ -21,22 +36,24 @@ LPD3DXMESH g_pMesh = NULL;
 std::vector<D3DMATERIAL9> g_pMaterials;
 std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
 DWORD g_dwNumMaterials = 0;
-LPD3DXEFFECT g_pEffect = NULL;        // simple.fx
-LPD3DXEFFECT g_pBloomEffect = NULL;   // bloom.fx
+
+// simple.fx
+LPD3DXEFFECT g_pEffect = NULL;
+
+// bloom.fx
+LPD3DXEFFECT g_pBloomEffect = NULL;
+
 bool g_bClose = false;
 
-// --- Bloom 用テクスチャ（※サーフェイスは都度ローカル取得） ---
 LPDIRECT3DTEXTURE9 g_pSceneTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBrightTex = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
-// 1/16あたりから始めれば問題ない。そんなような気がしたが勘違いだったようだ
-static const int kLevels = 6; // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
-static const int kStartIndex = 0;
-static const int kLevelRange = kLevels - kStartIndex;
-LPDIRECT3DTEXTURE9 g_texDown[kLevelRange] = {0};
-LPDIRECT3DTEXTURE9 g_texUp[kLevelRange]   = {0};
+// 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
+static const int kLevels = 6;
+LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
+LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
 float g_fIntensity = 0.5f;
@@ -235,23 +252,13 @@ void InitD3D(HWND hWnd)
         w = (std::max)(1, w / 2);
         h = (std::max)(1, h / 2);
 
-//        w = (std::max)(1, w_ / ((i + 1) * 2));
-//        h = (std::max)(1, h_ / ((i + 1) * 2));
-
-        if (i < kStartIndex)
-        {
-            continue;
-        }
-
-        int i2 = i - kStartIndex;
+        D3DXCreateTexture(g_pd3dDevice, w, h, 1,
+                          D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                          D3DPOOL_DEFAULT, &g_texDown[i]);
 
         D3DXCreateTexture(g_pd3dDevice, w, h, 1,
                           D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
-                          D3DPOOL_DEFAULT, &g_texDown[i2]);
-
-        D3DXCreateTexture(g_pd3dDevice, w, h, 1,
-                          D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
-                          D3DPOOL_DEFAULT, &g_texUp[i2]);
+                          D3DPOOL_DEFAULT, &g_texUp[i]);
     }
 }
 
@@ -262,7 +269,7 @@ void Cleanup()
         SAFE_RELEASE(texture);
     }
 
-    for (int i = 0; i < kLevelRange; ++i)
+    for (int i = 0; i < kLevels; ++i)
     {
         SAFE_RELEASE(g_texDown[i]);
         SAFE_RELEASE(g_texUp[i]);
@@ -396,7 +403,7 @@ static void Render()
     // 2) Down チェーン（Bright → 1/2 → 1/4 → 1/8）
     //==============================================================
     LPDIRECT3DTEXTURE9 src = g_pBrightTex;
-    for (int i = 0; i < kLevelRange; ++i)
+    for (int i = 0; i < kLevels; ++i)
     {
         g_pBloomEffect->SetTechnique("Down");
         g_pBloomEffect->SetTexture("g_SrcTex", src);
@@ -418,7 +425,7 @@ static void Render()
     //==============================================================
     // 3) Up チェーン（1/8 → 1/4 → 1/2 に足し戻し）
     //==============================================================
-    const int last = kLevelRange - 1;
+    const int last = kLevels - 1;
 
     // 最下段コピー相当
     g_pBloomEffect->SetTechnique("Upsample");
@@ -460,8 +467,6 @@ static void Render()
     g_pBloomEffect->SetTechnique("Combine");
     g_pBloomEffect->SetTexture("g_SceneTex", g_pSceneTex);
     g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[0]);
-//    g_pBloomEffect->SetTexture("g_SrcTex",   g_texUp[4]);
-//    g_pBloomEffect->SetTexture("g_SrcTex",   g_texDown[0]);
     g_pBloomEffect->SetFloat("g_Intensity",  g_fIntensity);
 
     g_pd3dDevice->BeginScene();

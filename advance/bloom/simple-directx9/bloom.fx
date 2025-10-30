@@ -11,8 +11,6 @@ texture g_SrcTex;
 // Up 合成で使う“ひとつ上の解像度”のバッファ
 texture g_SrcTex2;
 
-// MinFilterにLINEARを指定するとかなり変な結果になる
-
 sampler SceneS = sampler_state
 {
     Texture = <g_SceneTex>;
@@ -68,10 +66,8 @@ float4 PS_Bright(float2 uv:TEXCOORD0) : COLOR
 // ------------- Downsample（2x縮小＋テントフィルタ）-------------
 float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
 {
-    // 入力（SrcS）のテクセルサイズ
     float2 s = g_TexelSize;
 
-    // テント（中心=4, クロス=2, 隅=1）/16
     float4 c0 = tex2D(SrcS, uv);
 
     float4 cx = tex2D(SrcS, uv + float2(+s.x,    0)) +
@@ -84,16 +80,14 @@ float4 PS_Down(float2 uv : TEXCOORD0) : COLOR
                 tex2D(SrcS, uv + float2(-s.x, +s.y)) +
                 tex2D(SrcS, uv - s);
 
-    //return (c0 * 4.0 + cx * 2.0 + cc) / 16.0;
     return (c0 + cx + cc) / 9.0;
 }
 
-// ------------- Upsample（拡大＋Add 合成）-------------
 float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
 {
     float2 texelSize = g_TexelSize;
 
-    // 1) 中心（重み 4）
+    // 1) 中心
     float4 sumCenter = tex2D(SrcS, uv);
 
     // 2) 上下左右
@@ -110,8 +104,6 @@ float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
     sumDiag += tex2D(SrcS, uv + float2(-texelSize.x, +texelSize.y));
     sumDiag += tex2D(SrcS, uv - texelSize);
 
-    // 正規化（合計 16）
-    //float4 low = (sumCenter * 4 + sumCross * 2 + sumDiag) / 16.0;
     float4 low = (sumCenter + sumCross + sumDiag) / 9.0;
 
     // ひとつ上のレベル（SrcS2）を加算
@@ -119,11 +111,10 @@ float4 PS_UpsampleAdd(float2 uv : TEXCOORD0) : COLOR
     return low + hi;
 }
 
-// -------------------- 最終合成 --------------------
 float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
 {
     float3 scene = tex2D(SceneS, uv).rgb;
-    float3 bloom = tex2D(SrcS,   uv).rgb;   // up 最上位（フル解像度）の結果をバインド
+    float3 bloom = tex2D(SrcS,   uv).rgb;
 
     // 0.5倍してから0.5乗すると柔らかくて広い光になる
     bloom *= 0.5;
@@ -140,8 +131,35 @@ float4 PS_Combine(float2 uv:TEXCOORD0) : COLOR
     return float4(scene + bloom * g_Intensity, 1.0);
 }
 
-technique BrightPass { pass P0 { PixelShader = compile ps_3_0 PS_Bright(); } }
-technique Down       { pass P0 { PixelShader = compile ps_3_0 PS_Down();   } }
-technique Upsample   { pass P0 { PixelShader = compile ps_3_0 PS_UpsampleAdd(); } }
-technique Combine    { pass P0 { PixelShader = compile ps_3_0 PS_Combine(); } }
+technique BrightPass
+{
+    pass P0
+    {
+        PixelShader = compile ps_3_0 PS_Bright();
+    }
+}
+
+technique Down
+{
+    pass P0
+    {
+        PixelShader = compile ps_3_0 PS_Down();
+    }
+}
+
+technique Upsample
+{
+    pass P0
+    {
+        PixelShader = compile ps_3_0 PS_UpsampleAdd();
+    }
+}
+
+technique Combine
+{
+    pass P0
+    {
+        PixelShader = compile ps_3_0 PS_Combine();
+    }
+}
 
