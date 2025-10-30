@@ -1,7 +1,3 @@
-// bloom.fx — Starburst only (0°, 45°, 135°), no bloom
-// 入力：フル解像度のシーンと、スターバースト用の小RT
-// 手順：BrightDown(シーン→小RT) → StreakDirectional(小RT→小RT蓄積) → Combine(シーン+Streak)
-
 texture g_SceneTex;     // フル解像度シーン
 texture g_SrcTex;       // 現在の処理入力（BrightDown / Streak で使用）
 texture g_StreakTex;    // スターバースト蓄積（小RT）

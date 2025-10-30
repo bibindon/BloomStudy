@@ -23,7 +23,7 @@
     <FxCompile Include="simple.fx">
       <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="bloom.fx">
+    <FxCompile Include="starburst.fx">
       <Filter>リソース ファイル</Filter>
     </FxCompile>
   </ItemGroup>
