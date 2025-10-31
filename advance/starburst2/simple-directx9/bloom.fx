@@ -50,7 +50,10 @@ float4 PairH(float2 uv)     // 0°（左右）
     float4 c = tex2D(SrcS, uv);
     c += tex2D(SrcS, uv + float2(+s.x, 0));
     c += tex2D(SrcS, uv + float2(-s.x, 0));
-    return c / 3.0;
+//    return c / 3.0;
+    c += tex2D(SrcS, uv + float2(+s.x*2, 0));
+    c += tex2D(SrcS, uv + float2(-s.x*2, 0));
+    return c / 5.0;
 }
 
 float4 PairD45(float2 uv)   // 45°（左上＋右下）
@@ -59,7 +62,10 @@ float4 PairD45(float2 uv)   // 45°（左上＋右下）
     float4 c = tex2D(SrcS, uv);
     c += tex2D(SrcS, uv + float2(-s.x, +s.y));
     c += tex2D(SrcS, uv + float2(+s.x, -s.y));
-    return c / 3.0;
+//    return c / 3.0;
+    c += tex2D(SrcS, uv + float2(-s.x*2, +s.y*2));
+    c += tex2D(SrcS, uv + float2(+s.x*2, -s.y*2));
+    return c / 5.0;
 }
 
 float4 PairD135(float2 uv)  // 135°（右上＋左下）
@@ -68,7 +74,10 @@ float4 PairD135(float2 uv)  // 135°（右上＋左下）
     float4 c = tex2D(SrcS, uv);
     c += tex2D(SrcS, uv + float2(+s.x, +s.y));
     c += tex2D(SrcS, uv + float2(-s.x, -s.y));
-    return c / 3.0;
+//    return c / 3.0;
+    c += tex2D(SrcS, uv + float2(+s.x*2, +s.y*2));
+    c += tex2D(SrcS, uv + float2(-s.x*2, -s.y*2));
+    return c / 5.0;
 }
 
 // ------------- Downsample（2x縮小相当） 方向版 -------------
@@ -114,7 +123,7 @@ float4 PS_CombineStar(float2 uv : TEXCOORD0) : COLOR
     float3 scene = tex2D(SceneS, uv).rgb;
     float3 star  = tex2D(SrcS,   uv).rgb;
     
-    star = pow(star, 1.2);
+    //star = pow(star, 0.8);
     
     return float4(scene + star * g_Intensity, 1.0);
 }

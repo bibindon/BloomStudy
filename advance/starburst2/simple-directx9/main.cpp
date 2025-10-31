@@ -51,13 +51,13 @@ LPDIRECT3DTEXTURE9 g_pBlurTexH = NULL;
 LPDIRECT3DTEXTURE9 g_pBlurTexV = NULL;
 
 // 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128, 1/256, 1/512
-static const int kLevels = 8;
+static const int kLevels = 10;
 LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 2.0f;
-float g_fStep = 4.5f;
+float g_fIntensity = 1.0f;
+float g_fStep = 2.0f;
 float g_fTime = 0.0f;
 
 struct SCREENVERTEX
