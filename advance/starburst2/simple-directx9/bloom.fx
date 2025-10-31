@@ -114,8 +114,7 @@ float4 PS_CombineStar(float2 uv : TEXCOORD0) : COLOR
     float3 scene = tex2D(SceneS, uv).rgb;
     float3 star  = tex2D(SrcS,   uv).rgb;
     
-    star *= 0.5;
-    star = pow(star, 0.5);
+    star = pow(star, 1.2);
     
     return float4(scene + star * g_Intensity, 1.0);
 }

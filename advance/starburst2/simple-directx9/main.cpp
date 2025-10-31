@@ -56,8 +56,8 @@ LPDIRECT3DTEXTURE9 g_texDown[kLevels] = {0};
 LPDIRECT3DTEXTURE9 g_texUp[kLevels]   = {0};
 
 float g_fThreshold = 0.7f;
-float g_fIntensity = 1.5f;
-float g_fStep = 2.5f;
+float g_fIntensity = 2.0f;
+float g_fStep = 4.5f;
 float g_fTime = 0.0f;
 
 struct SCREENVERTEX
